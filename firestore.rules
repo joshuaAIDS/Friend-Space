@@ -1,0 +1,248 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - fullName: string (required)
+    //   - email: string (required)
+    //   - department: string
+    //   - year: string
+    //   - bio: string
+    //   - profileImage: string
+    //   - role: string (required, ['admin', 'member', 'pending', 'rejected'])
+    //   - approvalStatus: string (required, ['approved', 'pending', 'rejected'])
+    //   - joinedAt: timestamp
+    //   - lastSeen: timestamp
+    //   - isOnline: bool
+    //
+    // Collection: joinRequests
+    // Document ID: {requestId}
+    // Fields:
+    //   - requestId: string (required)
+    //   - uid: string (required)
+    //   - fullName: string (required)
+    //   - email: string (required)
+    //   - department: string
+    //   - year: string
+    //   - reason: string
+    //   - messageToAdmin: string
+    //   - profileImage: string
+    //   - status: string (required, ['pending', 'approved', 'rejected'])
+    //   - requestedAt: timestamp
+    //   - reviewedAt: timestamp
+    //   - reviewedBy: string
+    //
+    // Collection: chats
+    // Document ID: {chatId}
+    // Fields:
+    //   - chatId: string (required)
+    //   - type: string (required, ['private', 'group'])
+    //   - name: string
+    //   - members: list (required)
+    //   - createdBy: string
+    //   - createdAt: timestamp
+    //   - updatedAt: timestamp
+    //   - lastMessage: string
+    //   - lastMessageTime: timestamp
+    //
+    // Collection: messages
+    // Document ID: {messageId} (under /chats/{chatId}/messages/{messageId})
+    // Fields:
+    //   - messageId: string (required)
+    //   - chatId: string (required)
+    //   - senderId: string (required)
+    //   - senderName: string
+    //   - text: string (required)
+    //   - messageType: string (required, ['text', 'image', 'file'])
+    //   - fileUrl: string
+    //   - fileName: string
+    //   - seenBy: list
+    //   - createdAt: timestamp
+    //   - edited: bool
+    //   - editedAt: timestamp
+    //
+    // Collection: bugs
+    // Document ID: {bugId}
+    // Fields:
+    //   - bugId: string (required)
+    //   - userId: string (required)
+    //   - userName: string (required)
+    //   - description: string (required)
+    //   - status: string (required, ['pending', 'fixed', 'investigating'])
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: notifications
+    // Document ID: {notificationId}
+    // Fields:
+    //   - notificationId: string (required)
+    //   - userId: string (required)
+    //   - title: string (required)
+    //   - message: string (required)
+    //   - type: string
+    //   - read: bool (required)
+    //   - createdAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (request.auth.token.email == "ideathonigirs@gmail.com" ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    function isApprovedMember() {
+      return isAuthenticated() &&
+        (request.auth.token.email == "ideathonigirs@gmail.com" ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.approvalStatus == 'approved'));
+    }
+
+    function isChatMember(chatId, chatData) {
+      return isApprovedMember() && (
+        chatId == 'community' || 
+        (chatData != null && request.auth.uid in chatData.members)
+      );
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'fullName', 'email', 'role', 'approvalStatus']) &&
+             hasOnlyAllowedFields(['uid', 'fullName', 'email', 'department', 'year', 'bio', 'profileImage', 'role', 'approvalStatus', 'joinedAt', 'lastSeen', 'isOnline', 'updatedAt']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.fullName is string && data.fullName.size() > 0 && data.fullName.size() < 100 &&
+             data.email is string && data.email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") &&
+             data.role in ['admin', 'member', 'pending', 'rejected', 'new'] &&
+             data.approvalStatus in ['approved', 'pending', 'rejected', 'new'] &&
+             (!('joinedAt' in data) || data.joinedAt is timestamp) &&
+             (!('lastSeen' in data) || data.lastSeen is timestamp) &&
+             (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidJoinRequest(data) {
+      return data.keys().hasAll(['requestId', 'uid', 'fullName', 'email', 'status', 'requestedAt']) &&
+             hasOnlyAllowedFields(['requestId', 'uid', 'fullName', 'email', 'department', 'year', 'reason', 'messageToAdmin', 'status', 'requestedAt', 'createdAt', 'profileImage']) &&
+             data.requestId is string && data.uid is string &&
+             data.fullName is string && data.fullName.size() > 0 &&
+             data.email is string &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             data.requestedAt is timestamp &&
+             (!('createdAt' in data) || data.createdAt is timestamp) &&
+             (!('profileImage' in data) || data.profileImage is string);
+    }
+
+    function isValidBugReport(data) {
+      return data.keys().hasAll(['userId', 'userName', 'description', 'status', 'createdAt']) &&
+             data.userId is string && data.userName is string &&
+             data.description is string && data.description.size() > 0 && data.description.size() < 5000 &&
+             data.status in ['pending', 'fixed', 'investigating'] &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['messageId', 'chatId', 'senderId', 'text', 'messageType', 'createdAt']) &&
+             data.text is string && data.text.size() < 5000 &&
+             data.messageType in ['text', 'image', 'file'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (
+        (request.resource.data.role == 'new' && request.resource.data.approvalStatus == 'new') ||
+        (request.resource.data.role == 'pending' && request.resource.data.approvalStatus == 'new') ||
+        (request.auth.token.email == "ideathonigirs@gmail.com" && 
+         request.resource.data.role == 'admin' && request.resource.data.approvalStatus == 'approved')
+      );
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (
+        (isOwner(userId) && (
+          (request.resource.data.role == resource.data.role && request.resource.data.approvalStatus == resource.data.approvalStatus) ||
+          (resource.data.approvalStatus == 'new' && request.resource.data.approvalStatus == 'pending' && (request.resource.data.role == 'pending' || request.resource.data.role == 'new')) ||
+          (resource.data.approvalStatus == 'pending' && request.resource.data.approvalStatus == 'new' && (request.resource.data.role == 'new' || request.resource.data.role == 'pending'))
+        )) ||
+        isAdmin()
+      );
+    }
+
+    match /joinRequests/{requestId} {
+      allow read: if isAdmin() || (isAuthenticated() && (requestId == 'req_' + request.auth.uid || (resource != null && request.auth.uid == resource.data.uid)));
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.uid && isValidJoinRequest(request.resource.data);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /chats/{chatId} {
+      allow read: if isAdmin() || isChatMember(chatId, resource.data);
+      allow create: if isApprovedMember();
+      allow update: if isAdmin() || isChatMember(chatId, resource.data);
+      
+      match /messages/{messageId} {
+        allow read: if isAdmin() || (
+          chatId == 'community' ? isApprovedMember() : (
+            exists(/databases/$(database)/documents/chats/$(chatId)) && 
+            isChatMember(chatId, get(/databases/$(database)/documents/chats/$(chatId)).data)
+          )
+        );
+        allow create: if isApprovedMember() && (
+          chatId == 'community' ? true : (
+            exists(/databases/$(database)/documents/chats/$(chatId)) && 
+            isChatMember(chatId, get(/databases/$(database)/documents/chats/$(chatId)).data)
+          )
+        ) && isValidMessage(request.resource.data);
+        allow update: if isApprovedMember() && (
+          chatId == 'community' ? true : (
+            exists(/databases/$(database)/documents/chats/$(chatId)) && 
+            isChatMember(chatId, get(/databases/$(database)/documents/chats/$(chatId)).data)
+          )
+        ) && request.auth.uid == resource.data.senderId;
+        allow delete: if isAdmin() || (
+          isApprovedMember() && (
+            chatId == 'community' ? true : (
+              exists(/databases/$(database)/documents/chats/$(chatId)) && 
+              isChatMember(chatId, get(/databases/$(database)/documents/chats/$(chatId)).data)
+            )
+          ) && request.auth.uid == resource.data.senderId
+        );
+      }
+    }
+
+    match /bugs/{bugId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId && isValidBugReport(request.resource.data);
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated(); // Allow system or other users to notify
+      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+  }
+}
+
