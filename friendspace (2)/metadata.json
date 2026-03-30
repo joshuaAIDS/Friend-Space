@@ -1,5 +1,0 @@
-{
-  "name": "FriendSpace",
-  "description": "A private college friends chat platform designed for selected students. Features include admin approval, real-time private and group chats, announcements, and file sharing.",
-  "requestFramePermissions": ["camera", "geolocation"]
-}
