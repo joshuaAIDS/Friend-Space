@@ -1,0 +1,118 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user profile in FriendSpace.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The user's unique ID." },
+        "fullName": { "type": "string", "description": "The user's full name." },
+        "email": { "type": "string", "description": "The user's email address." },
+        "department": { "type": "string", "description": "The user's college department." },
+        "year": { "type": "string", "description": "The user's college year." },
+        "bio": { "type": "string", "description": "A short bio or status message." },
+        "profileImage": { "type": "string", "description": "URL to the user's profile image." },
+        "role": { "type": "string", "enum": ["admin", "member", "pending", "rejected"], "description": "The user's role." },
+        "approvalStatus": { "type": "string", "enum": ["approved", "pending", "rejected"], "description": "The user's approval status." },
+        "joinedAt": { "type": "string", "format": "date-time", "description": "When the user joined." },
+        "lastSeen": { "type": "string", "format": "date-time", "description": "When the user was last active." },
+        "isOnline": { "type": "boolean", "description": "Whether the user is currently online." }
+      },
+      "required": ["uid", "fullName", "email", "role", "approvalStatus"]
+    },
+    "JoinRequest": {
+      "title": "JoinRequest",
+      "description": "A request to join FriendSpace.",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string", "description": "The request ID." },
+        "uid": { "type": "string", "description": "The user's ID." },
+        "fullName": { "type": "string", "description": "The user's full name." },
+        "email": { "type": "string", "description": "The user's email." },
+        "department": { "type": "string", "description": "The user's department." },
+        "year": { "type": "string", "description": "The user's year." },
+        "reason": { "type": "string", "description": "Reason for joining." },
+        "messageToAdmin": { "type": "string", "description": "Optional message to admin." },
+        "profileImage": { "type": "string", "description": "Optional profile photo." },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"], "description": "Request status." },
+        "requestedAt": { "type": "string", "format": "date-time", "description": "When the request was made." },
+        "reviewedAt": { "type": "string", "format": "date-time", "description": "When the request was reviewed." },
+        "reviewedBy": { "type": "string", "description": "The admin who reviewed the request." }
+      },
+      "required": ["requestId", "uid", "fullName", "email", "status", "requestedAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A private or group chat.",
+      "type": "object",
+      "properties": {
+        "chatId": { "type": "string", "description": "The chat ID." },
+        "type": { "type": "string", "enum": ["private", "group"], "description": "Chat type." },
+        "name": { "type": "string", "description": "Chat name (for groups)." },
+        "members": { "type": "array", "items": { "type": "string" }, "description": "List of member UIDs." },
+        "createdBy": { "type": "string", "description": "UID of the creator." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the chat was created." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the chat was last updated." },
+        "lastMessage": { "type": "string", "description": "The last message text." },
+        "lastMessageTime": { "type": "string", "format": "date-time", "description": "Time of the last message." }
+      },
+      "required": ["chatId", "type", "members", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "A message in a chat.",
+      "type": "object",
+      "properties": {
+        "messageId": { "type": "string", "description": "The message ID." },
+        "chatId": { "type": "string", "description": "The chat ID." },
+        "senderId": { "type": "string", "description": "The sender's UID." },
+        "senderName": { "type": "string", "description": "The sender's name." },
+        "text": { "type": "string", "description": "The message text." },
+        "messageType": { "type": "string", "enum": ["text", "image", "file"], "description": "Message type." },
+        "fileUrl": { "type": "string", "description": "URL to the shared file." },
+        "fileName": { "type": "string", "description": "Name of the shared file." },
+        "seenBy": { "type": "array", "items": { "type": "string" }, "description": "List of UIDs who have seen the message." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the message was sent." },
+        "edited": { "type": "boolean", "description": "Whether the message was edited." },
+        "editedAt": { "type": "string", "format": "date-time", "description": "When the message was last edited." }
+      },
+      "required": ["messageId", "chatId", "senderId", "text", "messageType", "createdAt"]
+    },
+    "BugReport": {
+      "title": "BugReport",
+      "description": "A bug report submitted by a user.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The bug report ID." },
+        "userId": { "type": "string", "description": "UID of the user who reported the bug." },
+        "userName": { "type": "string", "description": "Name of the user who reported the bug." },
+        "description": { "type": "string", "description": "Detailed description of the bug." },
+        "status": { "type": "string", "enum": ["pending", "investigating", "fixed"], "description": "Current status of the bug report." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the bug was reported." }
+      },
+      "required": ["id", "userId", "userName", "description", "status", "createdAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "A user notification.",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string", "description": "The notification ID." },
+        "userId": { "type": "string", "description": "Target user's UID." },
+        "title": { "type": "string", "description": "Notification title." },
+        "message": { "type": "string", "description": "Notification message." },
+        "type": { "type": "string", "description": "Notification type." },
+        "read": { "type": "boolean", "description": "Whether it has been read." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When it was created." }
+      },
+      "required": ["notificationId", "userId", "title", "message", "read", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "User", "description": "User profiles." },
+    "/joinRequests/{requestId}": { "schema": "JoinRequest", "description": "Requests to join the platform." },
+    "/chats/{chatId}": { "schema": "Chat", "description": "Private and group chats." },
+    "/chats/{chatId}/messages/{messageId}": { "schema": "Message", "description": "Messages within a chat." },
+    "/bugs/{bugId}": { "schema": "BugReport", "description": "Bug reports submitted by users." },
+    "/notifications/{notificationId}": { "schema": "Notification", "description": "User notifications." }
+  }
