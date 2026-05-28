@@ -16,7 +16,9 @@ import {
   updateDoc,
   setDoc,
   getDocs,
-  Timestamp
+  Timestamp,
+  arrayUnion,
+  deleteDoc
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import EmojiPicker, { Theme } from 'emoji-picker-react';
@@ -44,7 +46,11 @@ import {
   Users as UsersIcon,
   Search,
   X,
-  MessageSquare
+  MessageSquare,
+  Trash2,
+  Sun,
+  Moon,
+  UserPlus
 } from 'lucide-react';
 import { Chat, Message, User } from '../types';
 import { cn, formatDate } from '../lib/utils';
@@ -59,7 +65,6 @@ const ChatPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [recipient, setRecipient] = useState<User | null>(null);
   const [inputText, setInputText] = useState('');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isFocused, setIsFocused] = useState(true);
   const [isCreateGroupModalOpen, setIsCreateGroupModalOpen] = useState(false);
@@ -68,8 +73,31 @@ const ChatPage = () => {
   const [groupDescription, setGroupDescription] = useState('');
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [existingChats, setExistingChats] = useState<Chat[]>([]);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isGroupInfoOpen, setIsGroupInfoOpen] = useState(false);
+  const [currentChatMembers, setCurrentChatMembers] = useState<User[]>([]);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteSearchQuery, setInviteSearchQuery] = useState('');
+  const [isLightMode, setIsLightMode] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    isDestructive?: boolean;
+  }>({
+    show: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const emojiPickerRef = useRef<HTMLDivElement>(null);
 
   const isGroupView = location.pathname.startsWith('/groups');
@@ -189,9 +217,60 @@ const ChatPage = () => {
     };
   }, [chatId, profile]);
 
+  // Mark messages as read
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!chatId || !profile || !isFocused || messages.length === 0) return;
+
+    const unreadMessages = messages.filter(
+      msg => msg.senderId !== profile.uid && !msg.seenBy.includes(profile.uid)
+    );
+
+    if (unreadMessages.length > 0) {
+      const markAsRead = async () => {
+        for (const msg of unreadMessages) {
+          try {
+            await updateDoc(doc(db, 'chats', chatId, 'messages', msg.messageId), {
+              seenBy: arrayUnion(profile.uid)
+            });
+          } catch (error) {
+            console.error('Error marking message as read:', error);
+          }
+        }
+      };
+      markAsRead();
+    }
+  }, [chatId, profile, isFocused, messages]);
+
+  useEffect(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
   }, [messages]);
+
+  useEffect(() => {
+    const fetchCurrentChatMembers = async () => {
+      if (!chat || chat.members.length === 0) {
+        setCurrentChatMembers([]);
+        return;
+      }
+      
+      const memberData: User[] = [];
+      for (const memberId of chat.members) {
+        const uSnap = await getDoc(doc(db, 'users', memberId));
+        if (uSnap.exists()) {
+          memberData.push(uSnap.data() as User);
+        }
+      }
+      setCurrentChatMembers(memberData);
+    };
+
+    if (chat && (chat.type === 'group' || chat.chatId === 'community')) {
+      fetchCurrentChatMembers();
+    }
+  }, [chat]);
 
   const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -288,14 +367,134 @@ const ChatPage = () => {
   }, [profile]);
 
   useEffect(() => {
-    if (!chatId && profile) {
+    if (profile) {
       const q = query(collection(db, 'users'), where('approvalStatus', '==', 'approved'));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         setMembers(snapshot.docs.map(doc => doc.data() as User).filter(m => m.uid !== profile.uid));
       });
       return () => unsubscribe();
     }
-  }, [chatId, profile]);
+  }, [profile]);
+
+  const toggleTheme = () => {
+    setIsLightMode(!isLightMode);
+    document.documentElement.classList.toggle('light');
+  };
+
+  const handleInviteMembers = async (newMemberUids: string[]) => {
+    if (!chatId || !profile || !chat) return;
+    
+    try {
+      const updatedMembers = [...new Set([...chat.members, ...newMemberUids])];
+      await updateDoc(doc(db, 'chats', chatId), {
+        members: updatedMembers,
+        updatedAt: new Date().toISOString()
+      });
+      
+      // Send system message
+      const messageId = doc(collection(db, 'chats', chatId, 'messages')).id;
+      await setDoc(doc(db, 'chats', chatId, 'messages', messageId), {
+        messageId,
+        chatId,
+        senderId: 'system',
+        senderName: 'System',
+        text: `${profile.fullName} added ${newMemberUids.length} new member(s)`,
+        messageType: 'text',
+        seenBy: [profile.uid],
+        createdAt: new Date().toISOString(),
+      });
+
+      toast.success('Members added successfully!');
+      setIsInviteModalOpen(false);
+      setSelectedMembers([]);
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to add members.');
+    }
+  };
+
+  const handleRemoveMember = async (memberUid: string) => {
+    if (!chatId || !profile || !chat) return;
+    if (chat.createdBy !== profile.uid && profile.role !== 'admin') {
+      toast.error('Only group creator or admin can remove members.');
+      return;
+    }
+
+    setShowConfirmModal({
+      show: true,
+      title: 'Remove Member',
+      message: 'Are you sure you want to remove this member from the group?',
+      confirmText: 'Remove',
+      isDestructive: true,
+      onConfirm: async () => {
+        try {
+          const updatedMembers = chat.members.filter(uid => uid !== memberUid);
+          await updateDoc(doc(db, 'chats', chatId), {
+            members: updatedMembers,
+            updatedAt: new Date().toISOString()
+          });
+          
+          // Send system message
+          const messageId = doc(collection(db, 'chats', chatId, 'messages')).id;
+          await setDoc(doc(db, 'chats', chatId, 'messages', messageId), {
+            messageId,
+            chatId,
+            senderId: 'system',
+            senderName: 'System',
+            text: `${profile.fullName} removed a member`,
+            messageType: 'text',
+            seenBy: [profile.uid],
+            createdAt: new Date().toISOString(),
+          });
+
+          toast.success('Member removed.');
+        } catch (error) {
+          console.error(error);
+          toast.error('Failed to remove member.');
+        } finally {
+          setShowConfirmModal(prev => ({ ...prev, show: false }));
+        }
+      }
+    });
+  };
+
+  const handleDeleteGroup = async () => {
+    if (!chatId || !profile || !chat) return;
+    if (chat.createdBy !== profile.uid && profile.role !== 'admin') {
+      toast.error('Only group creator or admin can delete the group.');
+      return;
+    }
+
+    setShowConfirmModal({
+      show: true,
+      title: 'Delete Group',
+      message: 'Are you sure you want to delete this group? This action cannot be undone and all messages will be lost.',
+      confirmText: 'Delete Group',
+      isDestructive: true,
+      onConfirm: async () => {
+        setIsDeleting(true);
+        try {
+          // Delete all messages first
+          const messagesRef = collection(db, 'chats', chatId, 'messages');
+          const snapshot = await getDocs(messagesRef);
+          const deletePromises = snapshot.docs.map(d => deleteDoc(d.ref));
+          await Promise.all(deletePromises);
+          
+          // Delete the chat document
+          await deleteDoc(doc(db, 'chats', chatId));
+          
+          toast.success('Group deleted successfully.');
+          navigate('/groups');
+        } catch (error) {
+          console.error(error);
+          toast.error('Failed to delete group.');
+        } finally {
+          setIsDeleting(false);
+          setShowConfirmModal(prev => ({ ...prev, show: false }));
+        }
+      }
+    });
+  };
 
   const handleCreateGroup = async () => {
     if (!profile || !groupName.trim() || selectedMembers.length === 0) {
@@ -377,6 +576,64 @@ const ChatPage = () => {
     }
   };
 
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!chatId || !profile) return;
+    
+    try {
+      await deleteDoc(doc(db, 'chats', chatId, 'messages', messageId));
+      toast.success('Message deleted.');
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to delete message.');
+    }
+  };
+
+  const handleLeaveGroup = async () => {
+    if (!chatId || !profile || !chat) return;
+    
+    setIsLeaving(true);
+    try {
+      const updatedMembers = chat.members.filter(uid => uid !== profile.uid);
+      if (updatedMembers.length === 0) {
+        // If last member leaves, we could delete the chat, but let's just update for now
+        await deleteDoc(doc(db, 'chats', chatId));
+      } else {
+        await updateDoc(doc(db, 'chats', chatId), {
+          members: updatedMembers
+        });
+      }
+      toast.success('Left group.');
+      navigate('/groups');
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to leave group.');
+    } finally {
+      setIsLeaving(false);
+    }
+  };
+
+  const handleClearChat = async () => {
+    if (!chatId || !profile || !chat) return;
+    if (chat.createdBy !== profile.uid && profile.role !== 'admin') {
+      toast.error('Only group creator or admin can clear chat.');
+      return;
+    }
+
+    setIsClearing(true);
+    try {
+      const messagesRef = collection(db, 'chats', chatId, 'messages');
+      const snapshot = await getDocs(messagesRef);
+      const deletePromises = snapshot.docs.map(d => deleteDoc(d.ref));
+      await Promise.all(deletePromises);
+      toast.success('Chat cleared.');
+    } catch (error) {
+      console.error(error);
+      toast.error('Failed to clear chat.');
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   const [chatUserNames, setChatUserNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -410,14 +667,22 @@ const ChatPage = () => {
     setInputText(prev => prev + emojiObject.emoji);
   };
 
-  const filteredChats = existingChats.filter(c => isGroupView ? c.type === 'group' : c.type === 'private');
+  const filteredChats = existingChats.filter(c => {
+    const chatName = c.type === 'group' ? c.name : chatUserNames[c.chatId];
+    const matchesSearch = chatName?.toLowerCase().includes(chatSearchQuery.toLowerCase());
+    return (isGroupView ? c.type === 'group' : c.type === 'private') && (chatSearchQuery ? matchesSearch : true);
+  });
+
+  const filteredMembers = members.filter(m => 
+    m.fullName.toLowerCase().includes(chatSearchQuery.toLowerCase()) || 
+    m.department.toLowerCase().includes(chatSearchQuery.toLowerCase())
+  );
 
   return (
     <div className={cn(
-      "h-screen flex bg-[#0a0a0f] overflow-hidden relative transition-all duration-500",
+      "h-full flex bg-[#0a0a0f] overflow-hidden relative transition-all duration-500",
       !isFocused && "blur-xl grayscale pointer-events-none select-none"
     )}>
-      <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       
       {!isFocused && (
         <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/80 backdrop-blur-md">
@@ -440,31 +705,44 @@ const ChatPage = () => {
 
       {/* Left Column: Chat List */}
       <div className={cn(
-        "w-full lg:w-[400px] border-r border-white/5 flex flex-col glass z-10 shrink-0",
+        "w-full lg:w-80 xl:w-[400px] border-r border-white/5 flex flex-col glass z-10 shrink-0 h-full",
         chatId ? "hidden lg:flex" : "flex"
       )}>
         <header className="h-20 glass border-b border-white/5 flex items-center justify-between px-6 shrink-0">
           <div className="flex items-center gap-3">
-            <button 
-              onClick={() => setIsSidebarOpen(true)} 
-              className="lg:hidden p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white transition-all"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
             <h1 className="text-xl font-bold tracking-tight">{isGroupView ? 'Groups' : 'Chats'}</h1>
           </div>
-          {isGroupView && (
-            <button 
-              onClick={() => setIsCreateGroupModalOpen(true)}
-              className="p-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-xl transition-all shadow-lg shadow-violet-600/20"
-              title="Create New Group"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-          )}
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={toggleTheme}
+                className="p-2.5 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white rounded-xl transition-all"
+                title="Toggle Theme"
+              >
+                {isLightMode ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+              </button>
+              <button 
+                onClick={() => setIsCreateGroupModalOpen(true)}
+                className="p-2.5 bg-violet-600 hover:bg-violet-500 text-white rounded-xl transition-all shadow-lg shadow-violet-600/20"
+                title="Create New Group"
+              >
+                <Plus className="w-5 h-5" />
+              </button>
+            </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-hide">
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          {/* Search Bar */}
+          <div className="relative px-2">
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+            <input 
+              type="text" 
+              placeholder={`Search ${isGroupView ? 'groups' : 'chats'}...`}
+              value={chatSearchQuery}
+              onChange={(e) => setChatSearchQuery(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-12 pr-4 text-xs focus:outline-none focus:ring-2 focus:ring-violet-500/30 transition-all"
+            />
+          </div>
+
           {/* Existing Chats Section */}
           <section className="space-y-3">
             <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500 px-2">Recent {isGroupView ? 'Groups' : 'Conversations'}</h2>
@@ -516,7 +794,7 @@ const ChatPage = () => {
               {isGroupView ? 'Direct Messages' : 'New Conversation'}
             </h2>
             <div className="space-y-2">
-              {members.map((member) => (
+              {filteredMembers.map((member) => (
                 <button
                   key={member.uid}
                   onClick={() => startPrivateChat(member)}
@@ -549,7 +827,7 @@ const ChatPage = () => {
 
       {/* Right Column: Chat Content */}
       <div className={cn(
-        "flex-1 flex flex-col relative z-20",
+        "flex-1 flex flex-col relative z-20 h-full",
         !chatId ? "hidden lg:flex items-center justify-center bg-[#0a0a0f]" : "flex"
       )}>
         {chatId ? (
@@ -580,20 +858,42 @@ const ChatPage = () => {
                 <div className="min-w-0">
                   <h3 className="font-bold text-xs md:text-sm leading-none mb-1 truncate max-w-[120px] md:max-w-none">{recipient?.fullName || chat?.name || 'Chat'}</h3>
                   <p className="text-[9px] md:text-[10px] text-gray-500 uppercase tracking-tighter truncate">
-                    {recipient?.isOnline ? 'Online Now' : recipient?.lastSeen ? `Last seen ${formatDate(recipient.lastSeen)}` : 'Member'}
+                    {chatId === 'community' ? 'Public Community' : recipient?.isOnline ? 'Online Now' : recipient?.lastSeen ? `Last seen ${formatDate(recipient.lastSeen)}` : chat?.type === 'group' ? `${chat.members.length} members` : 'Member'}
                   </p>
                 </div>
               </div>
 
               <div className="flex items-center gap-1 md:gap-2">
-                <button className="p-2 md:p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all"><Phone className="w-4 h-4 md:w-5 md:h-5" /></button>
-                <button className="p-2 md:p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all"><Video className="w-4 h-4 md:w-5 md:h-5" /></button>
-                <button className="p-2 md:p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all"><MoreVertical className="w-4 h-4 md:w-5 md:h-5" /></button>
+                <button className="p-1.5 md:p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all"><Phone className="w-4 h-4 md:w-5 md:h-5" /></button>
+                <button className="p-1.5 md:p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all"><Video className="w-4 h-4 md:w-5 md:h-5" /></button>
+                {(chat?.type === 'group' || chatId === 'community') && (
+                  <div className="flex items-center gap-1">
+                    {chat?.type === 'group' && (chat.createdBy === profile?.uid || profile?.role === 'admin') && (
+                      <button 
+                        onClick={() => setIsInviteModalOpen(true)}
+                        className="p-1.5 md:p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all"
+                        title="Invite Members"
+                      >
+                        <UserPlus className="w-4 h-4 md:w-5 md:h-5" />
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => setIsGroupInfoOpen(!isGroupInfoOpen)}
+                      className={cn(
+                        "p-1.5 md:p-2.5 rounded-xl transition-all",
+                        isGroupInfoOpen ? "bg-violet-600 text-white" : "hover:bg-white/5 text-gray-400 hover:text-white"
+                      )}
+                    >
+                      <UsersIcon className="w-4 h-4 md:w-5 md:h-5" />
+                    </button>
+                  </div>
+                )}
+                <button className="p-1.5 md:p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all"><MoreVertical className="w-4 h-4 md:w-5 md:h-5" /></button>
               </div>
             </header>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 scrollbar-hide bg-[#0a0a0f]">
+            <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 bg-[#0a0a0f]">
               <AnimatePresence initial={false}>
                 {messages.map((msg, idx) => {
                   const isMe = msg.senderId === profile?.uid;
@@ -660,9 +960,18 @@ const ChatPage = () => {
                         <div className={cn("flex items-center gap-1.5 md:gap-2 px-1", isMe ? "justify-end" : "justify-start")}>
                           <span className="text-[8px] md:text-[9px] text-gray-500">{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           {isMe && (
-                            <span className="text-violet-500">
-                              {msg.seenBy.length > 1 ? <CheckCheck className="w-2.5 h-2.5 md:w-3 md:h-3" /> : <Check className="w-2.5 h-2.5 md:w-3 md:h-3" />}
-                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-violet-500">
+                                {msg.seenBy.length > 1 ? <CheckCheck className="w-2.5 h-2.5 md:w-3 md:h-3" /> : <Check className="w-2.5 h-2.5 md:w-3 md:h-3" />}
+                              </span>
+                              <button 
+                                onClick={() => handleDeleteMessage(msg.messageId)}
+                                className="p-1 rounded-lg hover:bg-red-500/10 text-gray-600 hover:text-red-400 transition-all opacity-0 group-hover:opacity-100"
+                                title="Delete Message"
+                              >
+                                <Trash2 className="w-2.5 h-2.5 md:w-3 md:h-3" />
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -673,11 +982,10 @@ const ChatPage = () => {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Area */}
             <div className="p-4 md:p-6 glass border-t border-white/5 shrink-0">
-              <form onSubmit={handleSendMessage} className="flex items-center gap-2 md:gap-4 max-w-5xl mx-auto">
+              <form onSubmit={handleSendMessage} className="flex items-center gap-2 md:gap-4 w-full">
                 <div className="flex items-center gap-0.5 md:gap-1">
-                  <label className="p-2 md:p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all cursor-pointer">
+                  <label className="p-1.5 md:p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all cursor-pointer">
                     <input type="file" className="hidden" onChange={handleFileUpload} />
                     <Paperclip className="w-4 h-4 md:w-5 md:h-5" />
                   </label>
@@ -685,7 +993,7 @@ const ChatPage = () => {
                     <button 
                       type="button" 
                       onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                      className="p-2 md:p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all"
+                      className="p-1.5 md:p-2.5 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all"
                     >
                       <Smile className="w-4 h-4 md:w-5 md:h-5" />
                     </button>
@@ -699,7 +1007,7 @@ const ChatPage = () => {
                         >
                           <EmojiPicker 
                             onEmojiClick={onEmojiClick}
-                            theme={Theme.DARK}
+                            theme={isLightMode ? Theme.LIGHT : Theme.DARK}
                             lazyLoadEmojis={true}
                             searchDisabled={false}
                             skinTonesDisabled={true}
@@ -731,7 +1039,7 @@ const ChatPage = () => {
                 <button
                   type="submit"
                   disabled={!inputText.trim() || uploading}
-                  className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-violet-600 flex items-center justify-center text-white shadow-lg shadow-violet-500/20 hover:bg-violet-500 transition-all active:scale-95 disabled:opacity-50 disabled:scale-100 shrink-0"
+                  className="w-9 h-9 md:w-12 md:h-12 rounded-2xl bg-violet-600 flex items-center justify-center text-white shadow-lg shadow-violet-500/20 hover:bg-violet-500 transition-all active:scale-95 disabled:opacity-50 disabled:scale-100 shrink-0"
                 >
                   <Send className="w-4 h-4 md:w-5 md:h-5" />
                 </button>
@@ -751,14 +1059,237 @@ const ChatPage = () => {
               </p>
             </div>
             <button 
-              onClick={() => setIsSidebarOpen(true)}
+              onClick={() => navigate(isGroupView ? '/groups' : '/chats')}
               className="lg:hidden px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-sm font-bold transition-all"
             >
-              View Conversations
+              Select a Conversation
             </button>
           </div>
         )}
       </div>
+
+      {/* Group Info Sidebar */}
+      <AnimatePresence>
+        {isGroupInfoOpen && (chat?.type === 'group' || chatId === 'community') && (
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="fixed lg:relative right-0 top-0 w-full lg:w-72 xl:w-[350px] h-full glass border-l border-white/5 z-[80] flex flex-col"
+          >
+            <header className="h-20 glass border-b border-white/5 flex items-center justify-between px-6 shrink-0">
+              <h3 className="font-bold text-sm uppercase tracking-widest text-gray-400">Group Info</h3>
+              <button 
+                onClick={() => setIsGroupInfoOpen(false)}
+                className="p-2 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </header>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+              <div className="text-center space-y-4">
+                <div className="w-24 h-24 rounded-[32px] bg-violet-600/20 border border-violet-500/30 flex items-center justify-center mx-auto shadow-2xl shadow-violet-600/10">
+                  <UsersIcon className="w-10 h-10 text-violet-400" />
+                </div>
+                <div>
+                  <h4 className="text-xl font-bold text-white tracking-tight">{chat?.name || 'Community Chat'}</h4>
+                  <p className="text-xs text-gray-500 mt-1">{chat?.description || 'Public discussion group for everyone.'}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between px-2">
+                  <h5 className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Members ({chatId === 'community' ? 'All' : currentChatMembers.length})</h5>
+                  {chat?.type === 'group' && (chat.createdBy === profile?.uid || profile?.role === 'admin') && (
+                    <button 
+                      onClick={() => setIsInviteModalOpen(true)}
+                      className="p-1.5 rounded-lg hover:bg-white/5 text-violet-400 transition-all flex items-center gap-1"
+                      title="Add Member"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span className="text-[8px] font-bold uppercase tracking-widest">Add</span>
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  {chatId === 'community' ? (
+                    <div className="p-4 rounded-2xl bg-white/5 border border-white/5 text-center">
+                      <p className="text-[10px] text-gray-500">All approved members can participate in community chat.</p>
+                    </div>
+                  ) : (
+                    currentChatMembers.map((member) => (
+                      <div key={member.uid} className="p-3 rounded-2xl bg-white/5 border border-white/5 flex items-center gap-3">
+                        <div className="relative">
+                          <div className="w-10 h-10 rounded-xl bg-white/5 overflow-hidden border border-white/10">
+                            {member.profileImage ? (
+                              <img src={member.profileImage} alt={member.fullName} className="w-full h-full object-cover" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-sm font-bold text-gray-500">
+                                {member.fullName.charAt(0)}
+                              </div>
+                            )}
+                          </div>
+                          {member.isOnline && (
+                            <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 border-2 border-[#0a0a0f] rounded-full" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-xs truncate">{member.fullName}</p>
+                          <p className="text-[9px] text-gray-500 truncate">{member.department}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {member.uid === chat?.createdBy && (
+                            <span className="px-2 py-0.5 rounded-full bg-violet-600/20 text-violet-400 text-[8px] font-bold uppercase tracking-widest border border-violet-500/30">Admin</span>
+                          )}
+                          {chat?.type === 'group' && (chat.createdBy === profile?.uid || profile?.role === 'admin') && member.uid !== profile?.uid && (
+                            <button 
+                              onClick={() => handleRemoveMember(member.uid)}
+                              className="p-1.5 rounded-lg hover:bg-red-500/10 text-gray-500 hover:text-red-400 transition-all"
+                              title="Remove Member"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="p-4 border-t border-white/10 space-y-2">
+                {chat?.type === 'group' && (
+                  <button
+                    onClick={handleLeaveGroup}
+                    disabled={isLeaving}
+                    className="w-full p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium hover:bg-red-500/20 transition-all flex items-center justify-center gap-2"
+                  >
+                    {isLeaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <X className="w-3 h-3" />}
+                    Leave Group
+                  </button>
+                )}
+                {(chat?.createdBy === profile?.uid || profile?.role === 'admin') && chatId !== 'community' && (
+                  <>
+                    <button
+                      onClick={handleClearChat}
+                      disabled={isClearing}
+                      className="w-full p-3 rounded-2xl bg-white/5 border border-white/10 text-gray-400 text-xs font-medium hover:bg-white/10 transition-all flex items-center justify-center gap-2"
+                    >
+                      {isClearing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                      Clear All Messages
+                    </button>
+                    <button
+                      onClick={handleDeleteGroup}
+                      disabled={isDeleting}
+                      className="w-full p-3 rounded-2xl bg-red-600/10 border border-red-600/20 text-red-500 text-xs font-bold hover:bg-red-600/20 transition-all flex items-center justify-center gap-2"
+                    >
+                      {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                      Delete Group
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Invite Members Modal */}
+      <AnimatePresence>
+        {isInviteModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsInviteModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-lg bg-[#0f0f15] border border-white/10 rounded-[32px] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <header className="p-6 border-b border-white/5 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white">Invite Members</h2>
+                  <p className="text-xs text-gray-500 mt-1">Add new participants to {chat?.name}</p>
+                </div>
+                <button onClick={() => setIsInviteModalOpen(false)} className="p-2 rounded-xl hover:bg-white/5 text-gray-400">
+                  <X className="w-5 h-5" />
+                </button>
+              </header>
+
+              <div className="p-6 flex-1 overflow-y-auto space-y-6">
+                <div className="relative">
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                  <input 
+                    type="text" 
+                    placeholder="Search users to invite..."
+                    value={inviteSearchQuery}
+                    onChange={(e) => setInviteSearchQuery(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-12 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/30 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  {members
+                    .filter(m => !chat?.members.includes(m.uid))
+                    .filter(m => m.fullName.toLowerCase().includes(inviteSearchQuery.toLowerCase()))
+                    .map((member) => (
+                    <button
+                      key={member.uid}
+                      onClick={() => toggleMemberSelection(member.uid)}
+                      className={cn(
+                        "w-full p-3 rounded-2xl border transition-all flex items-center gap-3 text-left group",
+                        selectedMembers.includes(member.uid)
+                          ? "bg-violet-600/20 border-violet-500/50"
+                          : "bg-white/5 border-white/5 hover:border-white/10"
+                      )}
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-white/5 overflow-hidden border border-white/10 shrink-0">
+                        {member.profileImage ? (
+                          <img src={member.profileImage} alt={member.fullName} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-sm font-bold text-gray-500">
+                            {member.fullName.charAt(0)}
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-xs truncate group-hover:text-violet-400 transition-colors">{member.fullName}</p>
+                        <p className="text-[9px] text-gray-500 truncate">{member.department}</p>
+                      </div>
+                      <div className={cn(
+                        "w-5 h-5 rounded-full border flex items-center justify-center transition-all",
+                        selectedMembers.includes(member.uid)
+                          ? "bg-violet-600 border-violet-400"
+                          : "border-white/10"
+                      )}>
+                        {selectedMembers.includes(member.uid) && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-white/5">
+                <button
+                  onClick={() => handleInviteMembers(selectedMembers)}
+                  disabled={selectedMembers.length === 0}
+                  className="w-full py-4 bg-violet-600 hover:bg-violet-500 text-white rounded-2xl font-bold transition-all disabled:opacity-50"
+                >
+                  Add {selectedMembers.length} Member(s)
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Create Group Modal */}
       <AnimatePresence>
@@ -786,7 +1317,7 @@ const ChatPage = () => {
                 </button>
               </div>
 
-              <div className="space-y-6 overflow-y-auto pr-2 scrollbar-hide">
+              <div className="space-y-6 overflow-y-auto pr-2">
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 ml-2">Group Name</label>
                   <input 
@@ -866,6 +1397,53 @@ const ChatPage = () => {
                   ) : (
                     <>Create Group Chat</>
                   )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirmation Modal */}
+      <AnimatePresence>
+        {showConfirmModal.show && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowConfirmModal(prev => ({ ...prev, show: false }))}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-sm bg-[#0f0f15] border border-white/10 rounded-[32px] shadow-2xl overflow-hidden p-8 text-center"
+            >
+              <div className={cn(
+                "w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 border",
+                showConfirmModal.isDestructive ? "bg-red-500/20 border-red-500/30 text-red-400" : "bg-violet-600/20 border-violet-500/30 text-violet-400"
+              )}>
+                {showConfirmModal.isDestructive ? <Trash2 className="w-8 h-8" /> : <ShieldAlert className="w-8 h-8" />}
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">{showConfirmModal.title}</h3>
+              <p className="text-sm text-gray-400 mb-8">{showConfirmModal.message}</p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={showConfirmModal.onConfirm}
+                  className={cn(
+                    "w-full py-4 rounded-2xl font-bold transition-all",
+                    showConfirmModal.isDestructive ? "bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/20" : "bg-violet-600 hover:bg-violet-500 text-white shadow-lg shadow-violet-600/20"
+                  )}
+                >
+                  {showConfirmModal.confirmText || 'Confirm'}
+                </button>
+                <button
+                  onClick={() => setShowConfirmModal(prev => ({ ...prev, show: false }))}
+                  className="w-full py-4 bg-white/5 hover:bg-white/10 text-gray-400 rounded-2xl font-bold transition-all"
+                >
+                  Cancel
                 </button>
               </div>
             </motion.div>

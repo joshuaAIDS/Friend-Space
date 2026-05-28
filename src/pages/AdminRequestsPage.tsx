@@ -129,7 +129,7 @@ const AdminRequestsPage = () => {
 
   return (
     <Layout>
-      <div className="p-4 md:p-8 max-w-6xl mx-auto">
+      <div className="p-4 md:p-8 w-full h-full overflow-y-auto">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 md:mb-10">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight mb-1">Join Requests</h1>

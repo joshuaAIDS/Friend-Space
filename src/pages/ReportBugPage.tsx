@@ -65,8 +65,8 @@ const ReportBugPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white p-4 md:p-8">
-      <div className="max-w-4xl mx-auto space-y-12">
+    <div className="p-4 md:p-8 w-full h-full overflow-y-auto">
+      <div className="space-y-12">
         {/* Header */}
         <div className="space-y-4">
           <div className="w-16 h-16 bg-violet-600/20 rounded-2xl flex items-center justify-center border border-violet-500/30 shadow-2xl shadow-violet-600/20">

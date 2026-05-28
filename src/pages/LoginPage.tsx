@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase';
@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { motion } from 'motion/react';
 import { Mail, Lock, LogIn, ArrowLeft, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import BrandLogo from '../components/BrandLogo';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -16,7 +17,23 @@ const LoginPage = () => {
 
   const from = location.state?.from?.pathname || "/dashboard";
 
-  const { signInWithGoogle } = useAuth();
+  const { firebaseUser: user, user: profile, isAuthReady, signInWithGoogle } = useAuth();
+
+  useEffect(() => {
+    if (isAuthReady && user) {
+      if (user.email?.toLowerCase() === 'ideathonigirs@gmail.com') {
+        navigate('/admin');
+      } else if (profile?.approvalStatus === 'approved') {
+        navigate('/dashboard');
+      } else if (profile?.approvalStatus === 'pending') {
+        navigate('/pending');
+      } else if (profile?.approvalStatus === 'rejected') {
+        navigate('/rejected');
+      } else if (profile?.approvalStatus === 'new' || (user && !profile)) {
+        navigate('/join-request');
+      }
+    }
+  }, [user, profile, isAuthReady, navigate]);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -90,22 +107,26 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 relative overflow-hidden">
+    <div className="h-full w-full overflow-y-auto p-4 md:p-8 relative overflow-hidden flex items-center justify-center">
       {/* Background Glow */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-violet-600/10 blur-[150px] rounded-full" />
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md relative z-10"
+        className="w-full relative z-10 max-w-md"
       >
         <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-8 transition-colors group">
           <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
           <span>Back to Home</span>
         </Link>
 
-        <div className="glass-card p-8 md:p-10">
-          <div className="text-center mb-10">
+        <div className="glass-card p-8 md:p-10 relative overflow-hidden">
+          <div className="absolute top-6 left-8">
+            <BrandLogo imageClassName="w-6 h-6" showText={false} />
+          </div>
+          
+          <div className="text-center mb-10 flex flex-col items-center mt-4">
             <h2 className="text-3xl font-bold mb-2 tracking-tight">Welcome Back</h2>
             <p className="text-gray-400">Login to access your private space</p>
           </div>

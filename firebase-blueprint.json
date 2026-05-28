@@ -12,8 +12,8 @@
         "year": { "type": "string", "description": "The user's college year." },
         "bio": { "type": "string", "description": "A short bio or status message." },
         "profileImage": { "type": "string", "description": "URL to the user's profile image." },
-        "role": { "type": "string", "enum": ["admin", "member", "pending", "rejected"], "description": "The user's role." },
-        "approvalStatus": { "type": "string", "enum": ["approved", "pending", "rejected"], "description": "The user's approval status." },
+        "role": { "type": "string", "enum": ["admin", "member", "pending", "rejected", "new"], "description": "The user's role." },
+        "approvalStatus": { "type": "string", "enum": ["approved", "pending", "rejected", "new"], "description": "The user's approval status." },
         "joinedAt": { "type": "string", "format": "date-time", "description": "When the user joined." },
         "lastSeen": { "type": "string", "format": "date-time", "description": "When the user was last active." },
         "isOnline": { "type": "boolean", "description": "Whether the user is currently online." }
@@ -78,20 +78,19 @@
       },
       "required": ["messageId", "chatId", "senderId", "text", "messageType", "createdAt"]
     },
-    "Announcement": {
-      "title": "Announcement",
-      "description": "An official announcement from admin.",
+    "BugReport": {
+      "title": "BugReport",
+      "description": "A bug report submitted by a user.",
       "type": "object",
       "properties": {
-        "announcementId": { "type": "string", "description": "The announcement ID." },
-        "title": { "type": "string", "description": "Announcement title." },
-        "content": { "type": "string", "description": "Announcement content." },
-        "createdBy": { "type": "string", "description": "Admin's UID." },
-        "createdAt": { "type": "string", "format": "date-time", "description": "When it was created." },
-        "priority": { "type": "string", "enum": ["low", "medium", "high"], "description": "Priority level." },
-        "attachmentUrl": { "type": "string", "description": "Optional attachment URL." }
+        "id": { "type": "string", "description": "The bug report ID." },
+        "userId": { "type": "string", "description": "UID of the user who reported the bug." },
+        "userName": { "type": "string", "description": "Name of the user who reported the bug." },
+        "description": { "type": "string", "description": "Detailed description of the bug." },
+        "status": { "type": "string", "enum": ["pending", "investigating", "fixed"], "description": "Current status of the bug report." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the bug was reported." }
       },
-      "required": ["announcementId", "title", "content", "createdBy", "createdAt"]
+      "required": ["id", "userId", "userName", "description", "status", "createdAt"]
     },
     "Notification": {
       "title": "Notification",
@@ -114,6 +113,6 @@
     "/joinRequests/{requestId}": { "schema": "JoinRequest", "description": "Requests to join the platform." },
     "/chats/{chatId}": { "schema": "Chat", "description": "Private and group chats." },
     "/chats/{chatId}/messages/{messageId}": { "schema": "Message", "description": "Messages within a chat." },
-    "/announcements/{announcementId}": { "schema": "Announcement", "description": "Official announcements." },
+    "/bugs/{bugId}": { "schema": "BugReport", "description": "Bug reports submitted by users." },
     "/notifications/{notificationId}": { "schema": "Notification", "description": "User notifications." }
   }

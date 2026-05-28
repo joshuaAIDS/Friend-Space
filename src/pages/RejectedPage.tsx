@@ -7,6 +7,8 @@ import { motion } from 'motion/react';
 import { XCircle, LogOut, Mail, ShieldAlert, User, GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 
+import BrandLogo from '../components/BrandLogo';
+
 const RejectedPage = () => {
   const { user: profile, loading } = useAuth();
   const navigate = useNavigate();
@@ -23,16 +25,20 @@ const RejectedPage = () => {
   if (loading) return null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 py-12 relative overflow-hidden">
+    <div className="h-full w-full overflow-y-auto p-4 md:p-8 relative overflow-hidden flex items-center justify-center">
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-red-600/10 blur-[150px] rounded-full" />
 
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-2xl relative z-10"
+        className="w-full relative z-10 max-w-2xl"
       >
-        <div className="glass-card p-8 md:p-12 text-center">
-          <div className="w-20 h-20 bg-red-500/10 border border-red-500/20 rounded-3xl flex items-center justify-center mx-auto mb-8">
+        <div className="glass-card p-8 md:p-12 text-center relative overflow-hidden">
+          <div className="absolute top-6 left-8">
+            <BrandLogo imageClassName="w-8 h-8" showText={false} />
+          </div>
+
+          <div className="w-20 h-20 bg-red-500/10 border border-red-500/20 rounded-3xl flex items-center justify-center mx-auto mb-8 mt-4">
             <XCircle className="w-10 h-10 text-red-400" />
           </div>
 

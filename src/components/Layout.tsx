@@ -9,7 +9,7 @@ import {
   LogOut, 
   User as UserIcon, 
   ShieldCheck, 
-  Megaphone,
+  Bug,
   Menu,
   X
 } from 'lucide-react';
@@ -17,6 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { auth } from '../firebase';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import BrandLogo from './BrandLogo';
 
 export const Layout: React.FC = () => {
   const { user } = useAuth();
@@ -35,9 +36,10 @@ export const Layout: React.FC = () => {
 
   const navItems = [
     { name: 'Home', path: '/dashboard', icon: Home, roles: ['admin', 'member'] },
+    { name: 'Community Chat', path: '/chats/community', icon: MessageSquare, roles: ['admin', 'member'] },
     { name: 'Private Chats', path: '/chats', icon: MessageSquare, roles: ['admin', 'member'] },
     { name: 'Group Chats', path: '/groups', icon: Users, roles: ['admin', 'member'] },
-    { name: 'Announcements', path: '/announcements', icon: Megaphone, roles: ['admin', 'member'] },
+    { name: 'Report Bug', path: '/report-bug', icon: Bug, roles: ['admin', 'member'] },
     { name: 'Profile', path: '/profile', icon: UserIcon, roles: ['admin', 'member'] },
     { name: 'Admin Panel', path: '/admin', icon: ShieldCheck, roles: ['admin'] },
     { name: 'Settings', path: '/settings', icon: Settings, roles: ['admin', 'member'] },
@@ -63,25 +65,21 @@ export const Layout: React.FC = () => {
       </button>
 
       {/* Sidebar */}
-      <AnimatePresence>
-        {(isSidebarOpen || (typeof window !== 'undefined' && window.innerWidth >= 1024)) && (
-          <motion.aside 
-            initial={{ x: -300 }}
-            animate={{ x: 0 }}
-            exit={{ x: -300 }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className={cn(
-              "fixed lg:relative z-40 w-64 md:w-72 h-full bg-white/[0.02] backdrop-blur-2xl border-r border-white/10 flex flex-col shadow-2xl",
-              !isSidebarOpen && "hidden lg:flex"
-            )}
-          >
+      <AnimatePresence mode="wait">
+        <motion.aside 
+          initial={false}
+          animate={{ 
+            x: isSidebarOpen || (typeof window !== 'undefined' && window.innerWidth >= 1024) ? 0 : -300,
+            opacity: 1
+          }}
+          transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+          className={cn(
+            "fixed lg:relative z-40 w-64 md:w-68 xl:w-72 h-full bg-white/[0.02] backdrop-blur-2xl border-r border-white/10 flex flex-col shadow-2xl transition-all duration-300",
+            !isSidebarOpen && "hidden lg:flex"
+          )}
+        >
             <div className="p-6 md:p-8 flex items-center gap-3 md:gap-4">
-              <div className="w-10 h-10 md:w-12 md:h-12 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg shadow-violet-500/30 group transition-transform hover:scale-105">
-                <Users size={24} className="text-white md:w-7 md:h-7" />
-              </div>
-              <h1 className="text-xl md:text-2xl font-bold tracking-tight bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
-                FriendSpace
-              </h1>
+              <BrandLogo imageClassName="w-8 h-8" />
             </div>
 
             <nav className="flex-1 px-3 md:px-4 space-y-1.5 md:space-y-2 overflow-y-auto py-4 md:py-6">
@@ -140,7 +138,6 @@ export const Layout: React.FC = () => {
               </button>
             </div>
           </motion.aside>
-        )}
       </AnimatePresence>
 
       {/* Overlay for mobile sidebar */}
@@ -155,7 +152,7 @@ export const Layout: React.FC = () => {
       )}
 
       {/* Main Content */}
-      <main className="flex-1 relative overflow-y-auto z-10 h-full">
+      <main className="flex-1 relative overflow-y-auto z-10 h-full flex flex-col">
         <Outlet />
       </main>
     </div>

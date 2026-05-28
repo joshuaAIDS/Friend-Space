@@ -17,6 +17,7 @@ import {
   X
 } from 'lucide-react';
 import { toast } from 'sonner';
+import BrandLogo from './BrandLogo';
 
 interface SidebarProps {
   isOpen?: boolean;
@@ -66,12 +67,9 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
         isOpen ? "translate-x-0" : "-translate-x-full"
       )}>
         <div className="p-6 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-violet-500/20">
-              <Users className="text-white w-5 h-5" />
-            </div>
-            <span className="text-lg font-bold tracking-tight">FriendSpace</span>
-          </div>
+          <Link to="/dashboard" className="flex items-center gap-3">
+            <BrandLogo />
+          </Link>
           <button 
             onClick={onClose}
             className="lg:hidden p-2 text-gray-400 hover:text-white"

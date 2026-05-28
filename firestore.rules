@@ -119,7 +119,7 @@ service cloud.firestore {
     function isChatMember(chatId, chatData) {
       return isApprovedMember() && (
         chatId == 'community' || 
-        (chatData != null && request.auth.uid in chatData.members)
+        (chatData != null && 'members' in chatData && chatData.members.hasAny([request.auth.uid]))
       );
     }
 
@@ -142,7 +142,7 @@ service cloud.firestore {
 
     function isValidJoinRequest(data) {
       return data.keys().hasAll(['requestId', 'uid', 'fullName', 'email', 'status', 'requestedAt']) &&
-             hasOnlyAllowedFields(['requestId', 'uid', 'fullName', 'email', 'department', 'year', 'reason', 'messageToAdmin', 'status', 'requestedAt', 'createdAt', 'profileImage']) &&
+             hasOnlyAllowedFields(['requestId', 'uid', 'fullName', 'email', 'department', 'year', 'reason', 'messageToAdmin', 'status', 'requestedAt', 'createdAt', 'profileImage', 'bio']) &&
              data.requestId is string && data.uid is string &&
              data.fullName is string && data.fullName.size() > 0 &&
              data.email is string &&
@@ -196,16 +196,14 @@ service cloud.firestore {
     }
 
     match /chats/{chatId} {
-      allow read: if isAdmin() || isChatMember(chatId, resource.data);
+      allow read: if chatId == 'community' || isAdmin() || isChatMember(chatId, resource.data);
       allow create: if isApprovedMember();
       allow update: if isAdmin() || isChatMember(chatId, resource.data);
       
       match /messages/{messageId} {
-        allow read: if isAdmin() || (
-          chatId == 'community' ? isApprovedMember() : (
-            exists(/databases/$(database)/documents/chats/$(chatId)) && 
-            isChatMember(chatId, get(/databases/$(database)/documents/chats/$(chatId)).data)
-          )
+        allow read: if chatId == 'community' || isAdmin() || (
+          exists(/databases/$(database)/documents/chats/$(chatId)) && 
+          isChatMember(chatId, get(/databases/$(database)/documents/chats/$(chatId)).data)
         );
         allow create: if isApprovedMember() && (
           chatId == 'community' ? true : (
@@ -218,7 +216,12 @@ service cloud.firestore {
             exists(/databases/$(database)/documents/chats/$(chatId)) && 
             isChatMember(chatId, get(/databases/$(database)/documents/chats/$(chatId)).data)
           )
-        ) && request.auth.uid == resource.data.senderId;
+        ) && (
+          // Sender can edit their own message
+          (request.auth.uid == resource.data.senderId && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'edited', 'editedAt', 'seenBy'])) ||
+          // Any member can mark as read (only seenBy field changes)
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['seenBy']))
+        );
         allow delete: if isAdmin() || (
           isApprovedMember() && (
             chatId == 'community' ? true : (

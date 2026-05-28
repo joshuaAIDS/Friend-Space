@@ -16,8 +16,6 @@ import {
   where
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import Sidebar from '../components/Sidebar';
-import Topbar from '../components/Topbar';
 import { Layout } from '../components/Layout';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -36,7 +34,9 @@ import {
   Search,
   ShieldCheck,
   Menu,
-  ShieldAlert
+  ShieldAlert,
+  Bot,
+  Sparkles
 } from 'lucide-react';
 import { Chat, Message, User } from '../types';
 import { cn, formatDate } from '../lib/utils';
@@ -51,10 +51,10 @@ const GroupChatPage = () => {
   const [members, setMembers] = useState<User[]>([]);
   const [inputText, setInputText] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [isFocused, setIsFocused] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleFocus = () => setIsFocused(true);
@@ -139,7 +139,12 @@ const GroupChatPage = () => {
   }, [groupId, profile, navigate]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTo({
+        top: messagesContainerRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
   }, [messages]);
 
   const handleSendMessage = async (e?: React.FormEvent) => {
@@ -218,7 +223,7 @@ const GroupChatPage = () => {
   return (
     <Layout hideTopbar>
       <div className={cn(
-        "h-[calc(100vh)] flex flex-col relative transition-all duration-500",
+        "h-full flex flex-col relative transition-all duration-500",
         !isFocused && "blur-xl grayscale pointer-events-none select-none"
       )}>
         {!isFocused && (
@@ -242,12 +247,6 @@ const GroupChatPage = () => {
         {/* Chat Header */}
         <header className="h-20 glass border-b border-white/5 flex items-center justify-between px-4 md:px-8 sticky top-0 z-30">
           <div className="flex items-center gap-3 md:gap-4">
-            <button 
-              onClick={() => setIsSidebarOpen(true)} 
-              className="lg:hidden p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white transition-all"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
             <button onClick={() => navigate(-1)} className="p-2 rounded-xl hover:bg-white/5 text-gray-400 hover:text-white transition-all hidden md:block">
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -279,7 +278,7 @@ const GroupChatPage = () => {
 
         <div className="flex-1 flex overflow-hidden">
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 scrollbar-hide bg-[#0a0a0f]">
+          <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 bg-[#0a0a0f]">
             <AnimatePresence initial={false}>
               {messages.map((msg, idx) => {
                 const isMe = msg.senderId === profile?.uid;
@@ -293,34 +292,51 @@ const GroupChatPage = () => {
                     className={cn("flex flex-col", isMe ? "items-end" : "items-start")}
                   >
                     {!isMe && showSender && (
-                      <span className="text-[8px] md:text-[10px] font-bold text-gray-500 ml-1 mb-1 uppercase tracking-widest">{msg.senderName}</span>
+                      <div className="flex items-center gap-1.5 ml-1 mb-1">
+                        <span className="text-[8px] md:text-[10px] font-bold text-gray-500 uppercase tracking-widest">{msg.senderName}</span>
+                        {msg.isBot && (
+                          <span className="bg-violet-600/20 text-violet-400 text-[7px] md:text-[8px] font-bold px-1.5 py-0.5 rounded-md border border-violet-500/30 flex items-center gap-1 uppercase tracking-tighter">
+                            <Sparkles className="w-2 h-2" />
+                            AI Assistant
+                          </span>
+                        )}
+                      </div>
                     )}
-                    <div className={cn(
-                      "p-2.5 md:p-3 rounded-2xl text-xs md:text-sm shadow-lg max-w-[85%] md:max-w-[70%]",
-                      isMe 
-                        ? "bg-violet-600 text-white rounded-br-none" 
-                        : "bg-white/5 border border-white/10 text-gray-200 rounded-bl-none"
-                    )}>
-                      {msg.messageType === 'text' && <p className="leading-relaxed break-words">{msg.text}</p>}
-                      {msg.messageType === 'image' && (
-                        <div className="space-y-2">
-                          <img src={msg.fileUrl} alt="Shared" className="rounded-xl max-h-48 md:max-h-60 object-cover" />
+                    <div className="flex items-end gap-2 max-w-[85%] md:max-w-[70%]">
+                      {!isMe && showSender && msg.isBot && (
+                        <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-violet-600/20 border border-violet-500/30 flex items-center justify-center shrink-0 mb-5">
+                          <Bot className="w-4 h-4 md:w-5 md:h-5 text-violet-400" />
                         </div>
                       )}
-                      {msg.messageType === 'file' && (
-                        <div className="flex items-center gap-2 md:gap-3 p-2 rounded-xl bg-black/20 border border-white/5">
-                          <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
-                            <FileText className="w-4 h-4 md:w-5 md:h-5 text-violet-400" />
+                      <div className={cn(
+                        "p-2.5 md:p-3 rounded-2xl text-xs md:text-sm shadow-lg w-full",
+                        isMe 
+                          ? "bg-violet-600 text-white rounded-br-none" 
+                          : msg.isBot 
+                            ? "bg-violet-950/40 border border-violet-500/30 text-violet-100 rounded-bl-none"
+                            : "bg-white/5 border border-white/10 text-gray-200 rounded-bl-none"
+                      )}>
+                        {msg.messageType === 'text' && <p className="leading-relaxed break-words">{msg.text}</p>}
+                        {msg.messageType === 'image' && (
+                          <div className="space-y-2">
+                            <img src={msg.fileUrl} alt="Shared" className="rounded-xl max-h-48 md:max-h-60 object-cover" />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[10px] md:text-xs font-bold truncate">{msg.fileName}</p>
-                            <p className="text-[8px] md:text-[10px] text-gray-400">Document</p>
+                        )}
+                        {msg.messageType === 'file' && (
+                          <div className="flex items-center gap-2 md:gap-3 p-2 rounded-xl bg-black/20 border border-white/5">
+                            <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
+                              <FileText className="w-4 h-4 md:w-5 md:h-5 text-violet-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[10px] md:text-xs font-bold truncate">{msg.fileName}</p>
+                              <p className="text-[8px] md:text-[10px] text-gray-400">Document</p>
+                            </div>
+                            <a href={msg.fileUrl} target="_blank" rel="noreferrer" className="p-1.5 md:p-2 hover:bg-white/10 rounded-lg transition-all">
+                              <Download className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                            </a>
                           </div>
-                          <a href={msg.fileUrl} target="_blank" rel="noreferrer" className="p-1.5 md:p-2 hover:bg-white/10 rounded-lg transition-all">
-                            <Download className="w-3.5 h-3.5 md:w-4 md:h-4" />
-                          </a>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                     <span className="text-[8px] md:text-[9px] text-gray-500 mt-1 px-1">{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                   </motion.div>
@@ -328,6 +344,37 @@ const GroupChatPage = () => {
               })}
             </AnimatePresence>
             <div ref={messagesEndRef} />
+            {chat?.botIsTyping && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex items-start gap-2 max-w-[85%] md:max-w-[70%]"
+              >
+                <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg bg-violet-600/20 border border-violet-500/30 flex items-center justify-center shrink-0">
+                  <Bot className="w-4 h-4 md:w-5 md:h-5 text-violet-400" />
+                </div>
+                <div className="bg-violet-950/40 border border-violet-500/30 p-2.5 md:p-3 rounded-2xl rounded-bl-none flex items-center gap-2">
+                  <div className="flex gap-1">
+                    <motion.div
+                      animate={{ opacity: [0.4, 1, 0.4] }}
+                      transition={{ duration: 1.5, repeat: Infinity, delay: 0 }}
+                      className="w-1.5 h-1.5 bg-violet-400 rounded-full"
+                    />
+                    <motion.div
+                      animate={{ opacity: [0.4, 1, 0.4] }}
+                      transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
+                      className="w-1.5 h-1.5 bg-violet-400 rounded-full"
+                    />
+                    <motion.div
+                      animate={{ opacity: [0.4, 1, 0.4] }}
+                      transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
+                      className="w-1.5 h-1.5 bg-violet-400 rounded-full"
+                    />
+                  </div>
+                  <span className="text-[10px] md:text-xs text-violet-300 font-medium italic">FriendSpace AI is thinking...</span>
+                </div>
+              </motion.div>
+            )}
           </div>
 
           {/* Group Info Sidebar */}
@@ -335,14 +382,14 @@ const GroupChatPage = () => {
             {showInfo && (
               <motion.div
                 initial={{ width: 0, opacity: 0 }}
-                animate={{ width: window.innerWidth < 768 ? '100%' : 320, opacity: 1 }}
+                animate={{ width: window.innerWidth < 768 ? '100%' : 288, opacity: 1 }}
                 exit={{ width: 0, opacity: 0 }}
                 className={cn(
                   "glass border-l border-white/5 overflow-hidden flex flex-col z-40",
-                  "fixed inset-y-0 right-0 md:relative md:inset-auto"
+                  "fixed inset-y-0 right-0 md:relative md:inset-auto xl:w-80"
                 )}
               >
-                <div className="p-4 md:p-6 flex-1 overflow-y-auto scrollbar-hide">
+                <div className="p-4 md:p-6 flex-1 overflow-y-auto">
                   <div className="flex justify-end md:hidden mb-4">
                     <button onClick={() => setShowInfo(false)} className="p-2 rounded-xl bg-white/5 text-gray-400">
                       <ArrowLeft className="w-5 h-5" />

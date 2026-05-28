@@ -8,6 +8,8 @@ import { motion } from 'motion/react';
 import { Send, Image as ImageIcon, FileText, MessageSquare, Loader2, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
+import BrandLogo from '../components/BrandLogo';
+
 const JoinRequestPage = () => {
   const { firebaseUser: user, user: profile } = useAuth();
   const navigate = useNavigate();
@@ -16,13 +18,36 @@ const JoinRequestPage = () => {
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [formData, setFormData] = useState({
+    fullName: '',
+    department: '',
+    year: '1st Year',
+    bio: '',
     reason: '',
     messageToAdmin: '',
   });
 
   useEffect(() => {
+    if (profile) {
+      setFormData(prev => ({
+        ...prev,
+        fullName: profile.fullName || '',
+        department: profile.department || '',
+        year: profile.year || '1st Year',
+        bio: profile.bio || '',
+      }));
+    }
+  }, [profile]);
+
+  useEffect(() => {
     const checkExistingRequest = async () => {
       if (!user) return;
+      
+      // Admin or approved users shouldn't be here
+      if (profile?.role === 'admin' || profile?.approvalStatus === 'approved') {
+        navigate('/dashboard');
+        return;
+      }
+
       try {
         const q = query(
           collection(db, 'joinRequests'),
@@ -71,20 +96,26 @@ const JoinRequestPage = () => {
 
       if (image) {
         console.log("Uploading profile image...");
-        const storageRef = ref(storage, `profile_images/${user.uid}`);
-        await uploadBytes(storageRef, image);
-        profileImageUrl = await getDownloadURL(storageRef);
-        console.log("Image uploaded, URL:", profileImageUrl);
+        try {
+          const storageRef = ref(storage, `profile_images/${user.uid}`);
+          await uploadBytes(storageRef, image);
+          profileImageUrl = await getDownloadURL(storageRef);
+          console.log("Image uploaded, URL:", profileImageUrl);
+        } catch (storageErr) {
+          console.error("Storage upload failed, continuing without image:", storageErr);
+          toast.error("Image upload failed. We'll proceed with your request without the new image.");
+        }
       }
 
       const requestId = doc(collection(db, 'joinRequests')).id;
       const requestData = {
         requestId,
         uid: user.uid,
-        fullName: profile.fullName,
-        email: profile.email,
-        department: profile.department,
-        year: profile.year,
+        fullName: formData.fullName || profile.fullName || user.displayName || 'User',
+        email: profile.email || user.email || '',
+        department: formData.department || profile.department || 'N/A',
+        year: formData.year || profile.year || 'N/A',
+        bio: formData.bio || profile.bio || '',
         reason: formData.reason,
         messageToAdmin: formData.messageToAdmin,
         profileImage: profileImageUrl,
@@ -98,7 +129,12 @@ const JoinRequestPage = () => {
       console.log("Join request document created with ID:", requestId);
       
       // Update user profile with status and image if uploaded
+      // Use setDoc with merge: true to ensure it works even if doc doesn't exist yet
       const updateData: any = {
+        fullName: formData.fullName,
+        department: formData.department,
+        year: formData.year,
+        bio: formData.bio,
         approvalStatus: 'pending',
         role: 'pending',
         updatedAt: serverTimestamp()
@@ -108,13 +144,18 @@ const JoinRequestPage = () => {
       }
       
       console.log("Updating user profile with status and image...");
-      await updateDoc(doc(db, 'users', user.uid), updateData);
+      await setDoc(doc(db, 'users', user.uid), updateData, { merge: true });
+      console.log("User profile updated successfully.");
 
       toast.success('Join request submitted successfully!');
       navigate('/pending');
-    } catch (error) {
+    } catch (error: any) {
       console.error("CRITICAL: Error submitting join request:", error);
-      toast.error('Failed to submit request. Please try again.');
+      let errorMsg = 'Failed to submit request. Please try again.';
+      if (error?.code === 'permission-denied') {
+        errorMsg = 'Permission denied. Please ensure you are logged in correctly.';
+      }
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -180,16 +221,20 @@ const JoinRequestPage = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 py-12 relative overflow-hidden">
+    <div className="h-full w-full overflow-y-auto p-4 md:p-8 relative overflow-hidden flex items-center justify-center">
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-violet-600/10 blur-[150px] rounded-full" />
 
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-2xl relative z-10"
+        className="w-full relative z-10 max-w-3xl"
       >
-        <div className="glass-card p-8 md:p-10">
-          <div className="text-center mb-10">
+        <div className="glass-card p-8 md:p-10 relative overflow-hidden">
+          <div className="absolute top-6 left-8">
+            <BrandLogo imageClassName="w-8 h-8" showText={false} />
+          </div>
+          
+          <div className="text-center mb-10 mt-4">
             <h2 className="text-3xl font-bold mb-2 tracking-tight">Join Request</h2>
             <p className="text-gray-400">Tell us why you want to join FriendSpace</p>
           </div>
@@ -213,14 +258,53 @@ const JoinRequestPage = () => {
               <p className="text-xs text-gray-500">Upload a profile photo (optional)</p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 rounded-xl bg-white/5 border border-white/10">
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Full Name</p>
-                <p className="font-medium">{profile?.fullName}</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Full Name</label>
+                <input
+                  required
+                  type="text"
+                  value={formData.fullName}
+                  onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                  className="glass-input w-full"
+                  placeholder="Your full name"
+                />
               </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Department</p>
-                <p className="font-medium">{profile?.department} ({profile?.year})</p>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Department</label>
+                <input
+                  required
+                  type="text"
+                  value={formData.department}
+                  onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                  className="glass-input w-full"
+                  placeholder="e.g. Computer Science"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Year</label>
+                <select
+                  required
+                  value={formData.year}
+                  onChange={(e) => setFormData({ ...formData, year: e.target.value })}
+                  className="glass-input w-full"
+                >
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
+                  <option value="N/A">N/A</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Bio (Optional)</label>
+                <input
+                  type="text"
+                  value={formData.bio}
+                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                  className="glass-input w-full"
+                  placeholder="A short bio about yourself"
+                />
               </div>
             </div>
 

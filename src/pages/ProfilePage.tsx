@@ -27,11 +27,24 @@ const ProfilePage = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    fullName: profile?.fullName || '',
-    bio: profile?.bio || '',
-    department: profile?.department || '',
-    year: profile?.year || '',
+    fullName: '',
+    bio: '',
+    department: '',
+    year: '',
   });
+
+  // Sync form data when profile loads or changes
+  React.useEffect(() => {
+    if (profile) {
+      setFormData({
+        fullName: profile.fullName || '',
+        bio: profile.bio || '',
+        department: profile.department || '',
+        year: profile.year || '',
+      });
+    }
+  }, [profile]);
+
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
@@ -74,7 +87,7 @@ const ProfilePage = () => {
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-4xl mx-auto space-y-8 md:space-y-10">
+    <div className="p-4 md:p-8 w-full h-full overflow-y-auto space-y-8 md:space-y-10">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 md:gap-6">
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">My Profile</h1>
           {!isEditing && (

@@ -19,6 +19,8 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
     );
   }
 
+  console.log("ProtectedRoute - User:", firebaseUser?.uid, "Profile Status:", user?.approvalStatus, "Path:", location.pathname);
+
   if (!firebaseUser) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }

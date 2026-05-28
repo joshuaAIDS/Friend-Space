@@ -44,13 +44,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (firebaseUser) {
       setLoading(true);
       const path = `users/${firebaseUser.uid}`;
+      
+      // Safety timeout for loading state
+      const loadingTimeout = setTimeout(() => {
+        setLoading(false);
+        setIsAuthReady(true);
+      }, 10000); // 10 seconds safety timeout
+
       const unsubscribeUser = onSnapshot(
         doc(db, 'users', firebaseUser.uid),
         (docSnap) => {
+          clearTimeout(loadingTimeout);
+          const isAdminEmail = firebaseUser.email?.toLowerCase().trim() === 'ideathonigirs@gmail.com';
+          
           if (docSnap.exists()) {
             const data = docSnap.data() as User;
             // Fallback for admin email to ensure they always see the admin UI
-            if (firebaseUser.email?.toLowerCase() === 'ideathonigirs@gmail.com') {
+            if (isAdminEmail) {
               setUser({
                 ...data,
                 role: 'admin',
@@ -66,22 +76,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               uid: firebaseUser.uid,
               fullName: firebaseUser.displayName || 'New User',
               email: firebaseUser.email || '',
-              department: firebaseUser.email?.toLowerCase() === 'ideathonigirs@gmail.com' ? 'Administration' : 'Pending Setup',
+              department: isAdminEmail ? 'Administration' : 'Pending Setup',
               year: 'N/A',
-              role: firebaseUser.email?.toLowerCase() === 'ideathonigirs@gmail.com' ? 'admin' : 'new',
-              approvalStatus: firebaseUser.email?.toLowerCase() === 'ideathonigirs@gmail.com' ? 'approved' : 'new',
+              role: isAdminEmail ? 'admin' : 'new',
+              approvalStatus: isAdminEmail ? 'approved' : 'new',
               joinedAt: new Date(),
               lastSeen: new Date(),
               isOnline: true,
-              profileImage: firebaseUser.photoURL || undefined
+              profileImage: firebaseUser.photoURL || null
             };
 
             // Create the doc if it doesn't exist
+            console.log('User profile not found in Firestore, creating new profile for:', firebaseUser.uid);
             setDoc(doc(db, 'users', firebaseUser.uid), {
               ...newUser,
               joinedAt: serverTimestamp(),
               lastSeen: serverTimestamp()
-            }).catch(err => handleFirestoreError(err, OperationType.WRITE, path));
+            }).then(() => {
+              console.log('Successfully created user profile in Firestore for:', firebaseUser.uid);
+            }).catch(err => {
+              console.error('CRITICAL: Error creating user profile in Firestore:', err);
+              handleFirestoreError(err, OperationType.WRITE, path);
+            });
             
             setUser(newUser);
           }
@@ -89,6 +105,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsAuthReady(true);
         },
         (error) => {
+          console.error('Firestore onSnapshot error for user profile:', error);
           handleFirestoreError(error, OperationType.GET, path);
           setLoading(false);
           setIsAuthReady(true);
@@ -100,14 +117,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
+    // Force account selection to avoid issues in some iframe environments
+    provider.setCustomParameters({ prompt: 'select_account' });
+    
     try {
+      console.log('Starting Google Sign-In...');
       const result = await signInWithPopup(auth, provider);
-      const fbUser = result.user;
-      
-      // The profile initialization is handled by the onSnapshot listener
-      // in the useEffect above, which will detect if the user doc exists or not.
+      console.log('Google Sign-In successful:', result.user.email);
     } catch (error) {
       console.error('Error signing in with Google:', error);
+      // In some iframe environments, popups might be blocked or fail
+      if (error instanceof Error && (error as any).code === 'auth/popup-blocked') {
+        alert('Please allow popups for this site to sign in with Google.');
+      }
       throw error;
     }
   };

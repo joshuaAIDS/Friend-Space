@@ -1,11 +1,19 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Use initializeFirestore with experimentalForceLongPolling to handle connection issues in sandboxed environments
+const firestoreSettings = {
+  experimentalForceLongPolling: true,
+  experimentalAutoDetectLongPolling: false,
+};
+
+export const db = initializeFirestore(app, firestoreSettings, firebaseConfig.firestoreDatabaseId || '(default)');
+
 export const auth = getAuth(app);
 export const storage = getStorage(app);
 
@@ -58,4 +66,26 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   }
   console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
+}
+
+// Helper to manually test connection if needed
+export async function testFirestoreConnection() {
+  try {
+    console.log('Testing Firestore connection...');
+    await getDocFromServer(doc(db, 'users', 'connection_test_id'));
+    console.log('Firestore connection test successful (reached server).');
+    return true;
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes('the client is offline') || error.message.includes('unavailable')) {
+        console.error("Firestore connection failed: The client is offline or service is unavailable. Most recent error:", error.message);
+      } else if (error.message.includes('permission-denied')) {
+        console.log('Firestore connection test: Reached server but permission denied (expected if not logged in).');
+        return true; // Reached server
+      } else {
+        console.error("Firestore connection test error:", error.message);
+      }
+    }
+    return false;
+  }
 }

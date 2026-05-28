@@ -7,8 +7,8 @@ export interface User {
   email: string;
   department: string;
   year: string;
-  bio?: string;
-  profileImage?: string;
+  bio?: string | null;
+  profileImage?: string | null;
   role: UserRole;
   approvalStatus: ApprovalStatus;
   joinedAt: any;
@@ -45,6 +45,7 @@ export interface Chat {
   lastMessageTime?: string;
   groupImage?: string;
   description?: string;
+  botIsTyping?: boolean;
 }
 
 export interface Message {
@@ -60,16 +61,13 @@ export interface Message {
   createdAt: string;
   edited?: boolean;
   editedAt?: string;
-}
-
-export interface Announcement {
-  announcementId: string;
-  title: string;
-  content: string;
-  createdBy: string;
-  createdAt: string;
-  priority: 'low' | 'medium' | 'high' | 'important';
-  attachmentUrl?: string;
+  // AI related fields
+  isBot?: boolean;
+  senderType?: 'user' | 'ai';
+  providerUsed?: string;
+  replyToMessageId?: string;
+  triggerReason?: string;
+  moderationFlag?: boolean;
 }
 
 export interface Notification {
@@ -80,4 +78,13 @@ export interface Notification {
   type: string;
   read: boolean;
   createdAt: string;
+}
+
+export interface BugReport {
+  id: string;
+  userId: string;
+  userName: string;
+  description: string;
+  status: 'pending' | 'investigating' | 'fixed';
+  createdAt: any;
 }

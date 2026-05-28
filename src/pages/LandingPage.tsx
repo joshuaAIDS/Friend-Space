@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Shield, Users, MessageSquare, Lock, ArrowRight, GraduationCap } from 'lucide-react';
+import { Shield, MessageSquare, Lock, ArrowRight, GraduationCap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import BrandLogo from '../components/BrandLogo';
 
 const LandingPage = () => {
   const { firebaseUser: user, user: profile, isAuthReady } = useAuth();
@@ -18,24 +19,23 @@ const LandingPage = () => {
         navigate('/pending');
       } else if (profile?.approvalStatus === 'rejected') {
         navigate('/rejected');
+      } else if (profile?.approvalStatus === 'new' || (user && !profile)) {
+        navigate('/join-request');
       }
     }
   }, [user, profile, isAuthReady, navigate]);
 
   return (
-    <div className="relative overflow-hidden">
+    <div className="relative min-h-screen overflow-x-hidden">
       {/* Background Glows */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-violet-600/20 blur-[120px] rounded-full" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-600/20 blur-[120px] rounded-full" />
 
       {/* Navbar */}
-      <nav className="relative z-10 flex items-center justify-between px-6 py-6 max-w-7xl mx-auto">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 bg-gradient-to-br from-violet-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-violet-500/20">
-            <Users className="text-white w-6 h-6" />
-          </div>
-          <span className="text-xl font-bold tracking-tight">FriendSpace</span>
-        </div>
+      <nav className="relative z-10 flex items-center justify-between px-6 py-6 w-full">
+        <Link to="/" className="inline-flex items-center">
+          <BrandLogo imageClassName="w-10 h-10" />
+        </Link>
         <div className="flex items-center gap-4">
           <Link to="/login" className="text-sm font-medium hover:text-violet-400 transition-colors">Login</Link>
           <Link to="/signup" className="btn-primary py-2 px-5 text-sm">Join Now</Link>
@@ -43,7 +43,7 @@ const LandingPage = () => {
       </nav>
 
       {/* Hero Section */}
-      <section className="relative z-10 pt-20 pb-32 px-6 max-w-7xl mx-auto text-center">
+      <section className="relative z-10 pt-12 md:pt-16 lg:pt-20 pb-20 md:pb-24 lg:pb-32 px-6 w-full text-center">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -53,10 +53,10 @@ const LandingPage = () => {
             <Shield className="w-3 h-3" />
             <span>Private College Community</span>
           </div>
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight mb-6 leading-tight">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-tight">
             Your Private <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-indigo-400">College Chat</span> Space
           </h1>
-          <p className="text-gray-400 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
+          <p className="text-gray-400 text-base md:text-lg lg:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
             Connect only with approved friends from your college. A secure, modern, and student-focused platform for trusted conversations.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -89,7 +89,7 @@ const LandingPage = () => {
       </section>
 
       {/* Features */}
-      <section className="relative z-10 py-24 px-6 max-w-7xl mx-auto">
+      <section className="relative z-10 py-24 px-6 w-full">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           <FeatureCard 
             icon={<Lock className="w-6 h-6 text-violet-400" />}

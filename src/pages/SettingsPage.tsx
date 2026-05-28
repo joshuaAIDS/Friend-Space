@@ -85,7 +85,7 @@ const SettingsPage = () => {
   ];
 
   return (
-    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-8 md:space-y-10">
+    <div className="p-4 md:p-8 w-full h-full overflow-y-auto space-y-8 md:space-y-10">
         <div className="flex items-center gap-4 mb-6 md:mb-10">
           <div className="w-10 h-10 md:w-12 md:h-12 rounded-2xl bg-violet-600/20 flex items-center justify-center border border-violet-500/30 shrink-0">
             <Settings className="w-5 h-5 md:w-6 md:h-6 text-violet-400" />
@@ -98,7 +98,7 @@ const SettingsPage = () => {
 
         <div className="flex flex-col lg:flex-row gap-6 md:gap-10">
           {/* Tabs Sidebar */}
-          <div className="w-full lg:w-64 flex lg:flex-col gap-2 overflow-x-auto pb-2 lg:pb-0 scrollbar-hide">
+          <div className="w-full lg:w-64 flex lg:flex-col gap-2 overflow-x-auto pb-2 lg:pb-0">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
@@ -177,7 +177,7 @@ const SettingsPage = () => {
                     Notification Settings
                   </h3>
                   <div className="space-y-4">
-                    {['New Messages', 'Group Invites', 'Announcements', 'Friend Requests'].map((item) => (
+                    {['New Messages', 'Group Invites', 'Bug Reports', 'Friend Requests'].map((item) => (
                       <div key={item} className="flex items-center justify-between p-4 rounded-2xl bg-white/5 border border-white/5">
                         <div>
                           <p className="text-sm font-bold">{item}</p>

@@ -7,7 +7,7 @@ import { motion } from 'motion/react';
 import { 
   MessageSquare, 
   Users, 
-  Megaphone, 
+  Bug, 
   UserPlus, 
   CheckCircle2, 
   Clock, 
@@ -16,13 +16,12 @@ import {
   Search
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Announcement, Chat, User } from '../types';
+import { Chat, User } from '../types';
 import { cn, formatDate } from '../lib/utils';
 import { toast } from 'sonner';
 
 const Dashboard = () => {
   const { user: profile } = useAuth();
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [recentChats, setRecentChats] = useState<Chat[]>([]);
   const [members, setMembers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,12 +67,6 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (profile) {
-      // Fetch announcements
-      const qAnnouncements = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(3));
-      const unsubscribeAnnouncements = onSnapshot(qAnnouncements, (snapshot) => {
-        setAnnouncements(snapshot.docs.map(doc => doc.data() as Announcement));
-      });
-
       // Fetch recent chats
       const qChats = query(
         collection(db, 'chats'),
@@ -97,7 +90,6 @@ const Dashboard = () => {
       });
 
       return () => {
-        unsubscribeAnnouncements();
         unsubscribeChats();
         unsubscribeMembers();
       };
@@ -105,20 +97,20 @@ const Dashboard = () => {
   }, [profile]);
 
   return (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-8 md:space-y-10">
+    <div className="p-4 md:p-8 w-full h-full overflow-y-auto space-y-8 md:space-y-10">
         {/* Welcome Header */}
         <section className="relative overflow-hidden p-6 md:p-8 rounded-3xl bg-gradient-to-br from-violet-600/20 to-indigo-600/20 border border-violet-500/20">
           <div className="relative z-10">
             <h1 className="text-2xl md:text-3xl font-bold mb-2 tracking-tight">Welcome back, {profile?.fullName.split(' ')[0]}! 👋</h1>
             <p className="text-gray-400 max-w-lg text-sm md:text-base">
-              Your private college space is active. Connect with your friends, share notes, and stay updated with the latest announcements.
+              Your private college space is active. Connect with your friends, share notes, and help us improve by reporting any bugs you find.
             </p>
           </div>
           <div className="absolute right-[-5%] top-[-20%] w-64 h-64 bg-violet-500/10 blur-[80px] rounded-full" />
         </section>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 md:gap-10">
-          {/* Left Column: Chats & Announcements */}
+          {/* Left Column: Chats */}
           <div className="lg:col-span-2 space-y-8 md:space-y-10">
             {/* Recent Chats */}
             <section>
@@ -127,9 +119,17 @@ const Dashboard = () => {
                   <MessageSquare className="w-5 h-5 text-violet-400" />
                   Recent Conversations
                 </h2>
-                <Link to="/chats" className="text-xs md:text-sm text-violet-400 hover:text-violet-300 font-medium flex items-center gap-1">
-                  View All <ArrowRight className="w-4 h-4" />
-                </Link>
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => navigate('/groups')}
+                    className="text-xs md:text-sm text-violet-400 hover:text-violet-300 font-medium flex items-center gap-1"
+                  >
+                    <Plus className="w-4 h-4" /> Create Group
+                  </button>
+                  <Link to="/chats" className="text-xs md:text-sm text-violet-400 hover:text-violet-300 font-medium flex items-center gap-1">
+                    View All <ArrowRight className="w-4 h-4" />
+                  </Link>
+                </div>
               </div>
               
               <div className="space-y-3">
@@ -170,34 +170,19 @@ const Dashboard = () => {
               </div>
             </section>
 
-            {/* Latest Announcements */}
-            <section>
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-lg md:text-xl font-bold flex items-center gap-2">
-                  <Megaphone className="w-5 h-5 text-indigo-400" />
-                  Latest Announcements
-                </h2>
-                <Link to="/announcements" className="text-sm text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1">
-                  See All <ArrowRight className="w-4 h-4" />
+            {/* Bug Report CTA */}
+            <section className="glass-card p-6 md:p-8 border-l-4 border-l-amber-500 bg-amber-500/5">
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <h3 className="font-bold text-amber-400 flex items-center gap-2">
+                    <Bug className="w-5 h-5" />
+                    Found a bug?
+                  </h3>
+                  <p className="text-xs md:text-sm text-gray-400">Help us make FriendSpace better by reporting any issues you encounter.</p>
+                </div>
+                <Link to="/report-bug" className="px-4 py-2 bg-amber-500/10 text-amber-400 hover:bg-amber-500 hover:text-white border border-amber-500/20 rounded-xl text-xs font-bold transition-all shrink-0">
+                  Report Now
                 </Link>
-              </div>
-
-              <div className="space-y-4">
-                {announcements.map((ann) => (
-                  <div key={ann.announcementId} className="glass-card p-5 md:p-6 border-l-4 border-l-violet-500">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className={cn(
-                        "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider",
-                        ann.priority === 'important' ? "bg-red-500/20 text-red-400" : "bg-violet-500/20 text-violet-400"
-                      )}>
-                        {ann.priority}
-                      </span>
-                      <span className="text-[10px] text-gray-500">{formatDate(ann.createdAt)}</span>
-                    </div>
-                    <h3 className="font-bold mb-2 text-sm md:text-base">{ann.title}</h3>
-                    <p className="text-xs md:text-sm text-gray-400 line-clamp-2 leading-relaxed">{ann.content}</p>
-                  </div>
-                ))}
               </div>
             </section>
           </div>

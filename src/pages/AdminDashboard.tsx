@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, serverTimestamp, getDocs, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../context/AuthContext';
-import { JoinRequest, User, Chat, Announcement, UserRole } from '../types';
+import { JoinRequest, User, Chat, UserRole, BugReport } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, 
@@ -22,7 +22,12 @@ import {
   Loader2,
   Mail,
   BookOpen,
-  GraduationCap
+  GraduationCap,
+  Bug,
+  AlertCircle,
+  Wrench,
+  Edit3,
+  Save
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { cn, toJSDate } from '../lib/utils';
@@ -33,12 +38,30 @@ export const AdminDashboard: React.FC = () => {
   const [pendingRequests, setPendingRequests] = useState<JoinRequest[]>([]);
   const [approvedUsers, setApprovedUsers] = useState<User[]>([]);
   const [rejectedUsers, setRejectedUsers] = useState<User[]>([]);
+  const [bugs, setBugs] = useState<BugReport[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'members' | 'rejected'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'requests' | 'members' | 'rejected' | 'bugs' | 'profile'>('overview');
   const [roleChangeUser, setRoleChangeUser] = useState<User | null>(null);
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+  
+  // Edit Profile State
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [isEditProfileModalOpen, setIsEditProfileModalOpen] = useState(false);
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    fullName: '',
+    bio: '',
+    department: '',
+    year: ''
+  });
+
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
+  const [requestSearchTerm, setRequestSearchTerm] = useState('');
+  const [bugSearchTerm, setBugSearchTerm] = useState('');
+  const [removeConfirmUser, setRemoveConfirmUser] = useState<User | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
@@ -83,10 +106,23 @@ export const AdminDashboard: React.FC = () => {
       setLoading(false);
     });
 
+    // Fetch bug reports
+    const qBugs = query(
+      collection(db, 'bugs'),
+      orderBy('createdAt', 'desc'),
+      limit(100)
+    );
+    const unsubscribeBugs = onSnapshot(qBugs, (snapshot) => {
+      setBugs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BugReport)));
+    }, (error) => {
+      console.error('Error fetching bug reports:', error);
+    });
+
     return () => {
       unsubscribeRequests();
       unsubscribeApproved();
       unsubscribeRejected();
+      unsubscribeBugs();
     };
   }, [user]);
 
@@ -162,15 +198,86 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const handleProfileUpdate = async () => {
+    if (!editingUser) return;
+    
+    setIsUpdatingProfile(true);
+    try {
+      await updateDoc(doc(db, 'users', editingUser.uid), {
+        ...editFormData,
+        updatedAt: serverTimestamp()
+      });
+      toast.success(`Profile for ${editingUser.fullName} updated successfully.`);
+      setEditingUser(null);
+      setIsEditProfileModalOpen(false);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      toast.error('Failed to update user profile.');
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
+  const handleUpdateBugStatus = async (bugId: string, newStatus: 'pending' | 'investigating' | 'fixed') => {
+    try {
+      await updateDoc(doc(db, 'bugs', bugId), {
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
+      toast.success(`Bug status updated to ${newStatus}.`);
+    } catch (error) {
+      console.error('Error updating bug status:', error);
+      toast.error('Failed to update bug status.');
+    }
+  };
+
+  const handleRemoveMember = async () => {
+    if (!removeConfirmUser) return;
+    
+    setIsRemoving(true);
+    try {
+      await updateDoc(doc(db, 'users', removeConfirmUser.uid), {
+        approvalStatus: 'rejected',
+        role: 'rejected',
+        updatedAt: serverTimestamp()
+      });
+      toast.success(`Member ${removeConfirmUser.fullName} has been removed.`);
+      setRemoveConfirmUser(null);
+    } catch (error) {
+      console.error('Error removing member:', error);
+      toast.error('Failed to remove member.');
+    } finally {
+      setIsRemoving(false);
+    }
+  };
+
+  const filteredRequests = pendingRequests.filter(req => 
+    req.fullName.toLowerCase().includes(requestSearchTerm.toLowerCase()) ||
+    req.email.toLowerCase().includes(requestSearchTerm.toLowerCase()) ||
+    req.department.toLowerCase().includes(requestSearchTerm.toLowerCase())
+  );
+
+  const filteredMembers = approvedUsers.filter(u => 
+    u.fullName.toLowerCase().includes(memberSearchTerm.toLowerCase()) ||
+    u.email.toLowerCase().includes(memberSearchTerm.toLowerCase()) ||
+    u.department.toLowerCase().includes(memberSearchTerm.toLowerCase())
+  );
+
+  const filteredBugs = bugs.filter(bug => 
+    bug.userName.toLowerCase().includes(bugSearchTerm.toLowerCase()) ||
+    bug.description.toLowerCase().includes(bugSearchTerm.toLowerCase())
+  );
+
   const stats = [
     { name: 'Total Users', value: (approvedUsers.length + rejectedUsers.length + pendingRequests.length).toString(), icon: Users, color: 'text-blue-400', bg: 'bg-blue-400/10' },
     { name: 'Pending Requests', value: pendingRequests.length.toString(), icon: UserPlus, color: 'text-amber-400', bg: 'bg-amber-400/10' },
     { name: 'Approved Members', value: approvedUsers.length.toString(), icon: UserCheck, color: 'text-emerald-400', bg: 'bg-emerald-400/10' },
     { name: 'Rejected Users', value: rejectedUsers.length.toString(), icon: UserX, color: 'text-red-400', bg: 'bg-red-400/10' },
+    { name: 'Bug Reports', value: bugs.length.toString(), icon: Bug, color: 'text-violet-400', bg: 'bg-violet-400/10' },
   ];
 
   return (
-    <div className="p-4 md:p-8 lg:p-12 max-w-7xl mx-auto space-y-8 md:space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
+    <div className="p-4 md:p-8 lg:p-12 w-full h-full overflow-y-auto space-y-8 md:space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 relative">
       {/* Background Blobs for Admin Dashboard */}
       <div className="absolute top-[-10%] right-[-10%] w-[50%] h-[50%] bg-violet-600/10 blur-[150px] rounded-full pointer-events-none animate-pulse-slow" />
       <div className="absolute bottom-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/10 blur-[130px] rounded-full pointer-events-none animate-float" />
@@ -187,7 +294,7 @@ export const AdminDashboard: React.FC = () => {
           <p className="text-white/40 text-sm md:text-2xl font-medium tracking-tight ml-1 md:ml-2">Manage users, requests, and community settings.</p>
         </div>
         <div className="flex items-center gap-1.5 md:gap-3 bg-white/[0.03] backdrop-blur-3xl p-1.5 md:p-3 rounded-xl md:rounded-[32px] border border-white/10 shadow-2xl overflow-x-auto no-scrollbar max-w-full">
-          {(['overview', 'requests', 'members', 'rejected'] as const).map((tab) => (
+          {(['overview', 'requests', 'members', 'rejected', 'bugs', 'profile'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -214,7 +321,7 @@ export const AdminDashboard: React.FC = () => {
       {activeTab === 'overview' && (
         <>
           {/* Stats Grid */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-8 relative z-10">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 md:gap-8 relative z-10">
             {stats.map((stat, idx) => (
               <motion.div 
                 key={idx}
@@ -266,7 +373,10 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                         <div>
                           <h4 className="font-bold text-sm md:text-xl tracking-tight text-white/90">{req.fullName}</h4>
-                          <p className="text-[8px] md:text-[10px] text-white/30 font-bold uppercase tracking-[0.1em] md:tracking-[0.2em] mt-1 md:mt-1.5">{req.department} • {req.year}</p>
+                          <div className="flex items-center gap-2 mt-1 md:mt-1.5">
+                            <p className="text-[8px] md:text-[10px] text-white/30 font-bold uppercase tracking-[0.1em] md:tracking-[0.2em]">{req.department} • {req.year}</p>
+                            <span className="px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-[7px] font-bold text-amber-400 uppercase tracking-widest">Pending</span>
+                          </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 md:gap-4">
@@ -326,12 +436,33 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                         <div>
                           <h4 className="font-bold text-sm md:text-xl tracking-tight text-white/90">{u.fullName}</h4>
-                          <p className="text-[8px] md:text-[10px] text-white/30 font-bold uppercase tracking-[0.1em] md:tracking-[0.2em] mt-1 md:mt-1.5">{u.department} • {u.year}</p>
+                          <div className="flex items-center gap-2 mt-1 md:mt-1.5">
+                            <p className="text-[8px] md:text-[10px] text-white/30 font-bold uppercase tracking-[0.1em] md:tracking-[0.2em]">{u.department} • {u.year}</p>
+                            <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[7px] font-bold text-emerald-400 uppercase tracking-widest">Approved</span>
+                          </div>
                         </div>
                       </div>
-                      <span className="text-[8px] md:text-[10px] font-bold uppercase tracking-[0.1em] md:tracking-[0.2em] text-white/20 bg-white/5 px-3 md:px-5 py-1.5 md:py-2.5 rounded-full border border-white/5 group-hover:text-emerald-400 group-hover:bg-emerald-400/10 group-hover:border-emerald-400/20 transition-all duration-500">
-                        {u.joinedAt ? formatDistanceToNow(toJSDate(u.joinedAt)!, { addSuffix: true }) : ''}
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <button 
+                          onClick={() => {
+                            setEditingUser(u);
+                            setEditFormData({
+                              fullName: u.fullName,
+                              bio: u.bio || '',
+                              department: u.department,
+                              year: u.year
+                            });
+                            setIsEditProfileModalOpen(true);
+                          }}
+                          className="p-2 md:p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-white/40 hover:text-white transition-all"
+                          title="Edit Profile"
+                        >
+                          <Edit3 className="w-4 h-4 md:w-5 md:h-5" />
+                        </button>
+                        <span className="text-[8px] md:text-[10px] font-bold uppercase tracking-[0.1em] md:tracking-[0.2em] text-white/20 bg-white/5 px-3 md:px-5 py-1.5 md:py-2.5 rounded-full border border-white/5 group-hover:text-emerald-400 group-hover:bg-emerald-400/10 group-hover:border-emerald-400/20 transition-all duration-500">
+                          {u.joinedAt ? formatDistanceToNow(toJSDate(u.joinedAt)!, { addSuffix: true }) : ''}
+                        </span>
+                      </div>
                     </motion.div>
                   ))
                 ) : (
@@ -355,13 +486,15 @@ export const AdminDashboard: React.FC = () => {
               <input 
                 type="text" 
                 placeholder="Search requests..." 
+                value={requestSearchTerm}
+                onChange={(e) => setRequestSearchTerm(e.target.value)}
                 className="bg-white/[0.03] backdrop-blur-3xl border border-white/10 rounded-2xl md:rounded-[32px] py-4 md:py-6 pl-12 md:pl-16 pr-6 md:pr-8 text-sm md:text-lg focus:outline-none focus:ring-2 focus:ring-violet-500/50 w-full sm:w-96 transition-all shadow-2xl placeholder:text-white/10"
               />
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-12">
-            {pendingRequests.map((req, idx) => (
+            {filteredRequests.map((req, idx) => (
               <motion.div 
                 key={req.requestId}
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -447,6 +580,8 @@ export const AdminDashboard: React.FC = () => {
               <input 
                 type="text" 
                 placeholder="Search members..." 
+                value={memberSearchTerm}
+                onChange={(e) => setMemberSearchTerm(e.target.value)}
                 className="bg-white/[0.03] backdrop-blur-3xl border border-white/10 rounded-[32px] py-6 pl-16 pr-8 text-lg focus:outline-none focus:ring-2 focus:ring-violet-500/50 w-full sm:w-96 transition-all shadow-2xl placeholder:text-white/10"
               />
             </div>
@@ -460,6 +595,7 @@ export const AdminDashboard: React.FC = () => {
                 <thead>
                   <tr className="bg-white/[0.05] border-b border-white/10">
                     <th className="p-10 text-[10px] font-bold uppercase tracking-[0.3em] text-white/30">Member</th>
+                    <th className="p-10 text-[10px] font-bold uppercase tracking-[0.3em] text-white/30">Status</th>
                     <th className="p-10 text-[10px] font-bold uppercase tracking-[0.3em] text-white/30">Department</th>
                     <th className="p-10 text-[10px] font-bold uppercase tracking-[0.3em] text-white/30">Year</th>
                     <th className="p-10 text-[10px] font-bold uppercase tracking-[0.3em] text-white/30">Joined</th>
@@ -467,7 +603,7 @@ export const AdminDashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {approvedUsers.map((u, idx) => (
+                  {filteredMembers.map((u, idx) => (
                     <motion.tr 
                       key={u.uid} 
                       initial={{ opacity: 0, y: 10 }}
@@ -485,6 +621,16 @@ export const AdminDashboard: React.FC = () => {
                             <p className="text-sm text-white/30 font-medium mt-1 uppercase tracking-widest">{u.email}</p>
                           </div>
                         </div>
+                      </td>
+                      <td className="p-10">
+                        <span className={cn(
+                          "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border",
+                          u.approvalStatus === 'approved' ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
+                          u.approvalStatus === 'pending' ? "bg-amber-500/10 border-amber-500/20 text-amber-400" :
+                          "bg-red-500/10 border-red-500/20 text-red-400"
+                        )}>
+                          {u.approvalStatus}
+                        </span>
                       </td>
                       <td className="p-10">
                         <span className="px-5 py-2.5 rounded-full bg-white/5 text-[10px] font-bold text-white/60 uppercase tracking-widest border border-white/5 shadow-lg group-hover/row:bg-violet-500/10 group-hover/row:border-violet-500/20 group-hover/row:text-violet-400 transition-all duration-500">
@@ -505,6 +651,21 @@ export const AdminDashboard: React.FC = () => {
                         <div className="flex items-center gap-3">
                           <button 
                             onClick={() => {
+                              setEditingUser(u);
+                              setEditFormData({
+                                fullName: u.fullName,
+                                bio: u.bio || '',
+                                department: u.department,
+                                year: u.year
+                              });
+                              setIsEditProfileModalOpen(true);
+                            }}
+                            className="px-4 py-2 bg-blue-600/10 text-blue-400 hover:bg-blue-600 hover:text-white border border-blue-500/20 rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-lg"
+                          >
+                            Edit Profile
+                          </button>
+                          <button 
+                            onClick={() => {
                               setRoleChangeUser(u);
                               setSelectedRole(u.role);
                               setIsRoleModalOpen(true);
@@ -513,6 +674,14 @@ export const AdminDashboard: React.FC = () => {
                           >
                             Change Role
                           </button>
+                          {u.uid !== user?.uid && (
+                            <button 
+                              onClick={() => setRemoveConfirmUser(u)}
+                              className="px-4 py-2 bg-red-600/10 text-red-400 hover:bg-red-600 hover:text-white border border-red-500/20 rounded-xl text-xs font-bold uppercase tracking-widest transition-all shadow-lg"
+                            >
+                              Remove
+                            </button>
+                          )}
                           <button className="p-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-white/40 hover:text-white transition-all duration-500 hover:scale-110 active:scale-95 shadow-xl">
                             <MoreVertical size={24} />
                           </button>
@@ -559,6 +728,11 @@ export const AdminDashboard: React.FC = () => {
                   <div>
                     <h3 className="text-2xl font-bold tracking-tight text-white/90">{u.fullName}</h3>
                     <p className="text-[10px] text-white/30 font-bold uppercase tracking-[0.2em] mt-1.5">{u.email}</p>
+                    <div className="mt-2">
+                      <span className="px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/20 text-[8px] font-bold text-red-400 uppercase tracking-widest">
+                        Status: Rejected
+                      </span>
+                    </div>
                   </div>
                 </div>
 
@@ -576,6 +750,244 @@ export const AdminDashboard: React.FC = () => {
                   <UserX size={40} className="text-white/10" />
                 </div>
                 <p className="text-white/30 text-3xl font-bold uppercase tracking-[0.2em]">No rejected users</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'profile' && (
+        <div className="space-y-12 relative z-10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-10">
+            <h2 className="text-5xl font-bold tracking-tighter bg-gradient-to-r from-white to-white/40 bg-clip-text text-transparent">My Admin Profile</h2>
+          </div>
+          
+          <div className="glass-card p-12 rounded-[64px] border border-white/10 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-96 h-96 bg-violet-600/10 blur-[120px] rounded-full pointer-events-none" />
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+              <div className="space-y-8 text-center lg:text-left">
+                <div className="relative inline-block">
+                  <div className="w-48 h-48 rounded-[48px] bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-white font-bold text-6xl shadow-2xl border-4 border-white/10 overflow-hidden">
+                    {user?.profileImage ? (
+                      <img src={user.profileImage} alt={user.fullName} className="w-full h-full object-cover" />
+                    ) : (
+                      user?.fullName[0]
+                    )}
+                  </div>
+                  <div className="absolute -bottom-4 -right-4 w-12 h-12 bg-violet-600 rounded-2xl flex items-center justify-center shadow-2xl border-4 border-[#0a0a0f]">
+                    <ShieldCheck className="text-white w-6 h-6" />
+                  </div>
+                </div>
+                
+                <div>
+                  <h3 className="text-3xl font-bold tracking-tight">{user?.fullName}</h3>
+                  <p className="text-white/40 font-bold uppercase tracking-[0.2em] text-sm mt-2">{user?.role} • {user?.email}</p>
+                </div>
+
+                <div className="p-6 bg-white/[0.03] rounded-[32px] border border-white/5 space-y-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-white/30 font-bold uppercase tracking-widest text-[10px]">Status</span>
+                    <span className="text-emerald-400 font-bold uppercase tracking-widest text-[10px]">Active</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-white/30 font-bold uppercase tracking-widest text-[10px]">Department</span>
+                    <span className="text-white/80 font-bold text-xs">{user?.department}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-white/30 font-bold uppercase tracking-widest text-[10px]">Year</span>
+                    <span className="text-white/80 font-bold text-xs">{user?.year}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="lg:col-span-2 space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/30 ml-2">Full Name</label>
+                    <input 
+                      type="text" 
+                      value={editFormData.fullName}
+                      onChange={(e) => setEditFormData({ ...editFormData, fullName: e.target.value })}
+                      onFocus={() => {
+                        if (!editingUser && user) {
+                          setEditingUser(user);
+                          setEditFormData({
+                            fullName: user.fullName,
+                            bio: user.bio || '',
+                            department: user.department,
+                            year: user.year
+                          });
+                        }
+                      }}
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-[24px] py-5 px-8 text-lg focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all shadow-xl"
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/30 ml-2">Department</label>
+                    <input 
+                      type="text" 
+                      value={editFormData.department}
+                      onChange={(e) => setEditFormData({ ...editFormData, department: e.target.value })}
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-[24px] py-5 px-8 text-lg focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all shadow-xl"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/30 ml-2">Year</label>
+                    <select 
+                      value={editFormData.year}
+                      onChange={(e) => setEditFormData({ ...editFormData, year: e.target.value })}
+                      className="w-full bg-white/[0.03] border border-white/10 rounded-[24px] py-5 px-8 text-lg focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all shadow-xl appearance-none"
+                    >
+                      <option value="1st Year">1st Year</option>
+                      <option value="2nd Year">2nd Year</option>
+                      <option value="3rd Year">3rd Year</option>
+                      <option value="4th Year">4th Year</option>
+                      <option value="N/A">N/A</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/30 ml-2">Bio / Status</label>
+                  <textarea 
+                    rows={5}
+                    value={editFormData.bio}
+                    onChange={(e) => setEditFormData({ ...editFormData, bio: e.target.value })}
+                    className="w-full bg-white/[0.03] border border-white/10 rounded-[32px] py-6 px-8 text-lg focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all shadow-xl resize-none"
+                    placeholder="Tell the community about yourself..."
+                  />
+                </div>
+
+                <div className="pt-4">
+                  <motion.button 
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleProfileUpdate}
+                    disabled={isUpdatingProfile || !editingUser}
+                    className="w-full md:w-auto px-12 py-6 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-[28px] font-bold text-xl transition-all shadow-2xl flex items-center justify-center gap-4 border border-white/10"
+                  >
+                    {isUpdatingProfile ? <Loader2 className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
+                    Save Profile Changes
+                  </motion.button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'bugs' && (
+        <div className="space-y-12 relative z-10">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-10">
+            <h2 className="text-5xl font-bold tracking-tighter bg-gradient-to-r from-white to-white/40 bg-clip-text text-transparent">Bug Reports ({bugs.length})</h2>
+            <div className="relative group/search">
+              <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-white/20 group-focus-within/search:text-violet-400 transition-colors" size={24} />
+              <input 
+                type="text" 
+                placeholder="Search bugs..." 
+                value={bugSearchTerm}
+                onChange={(e) => setBugSearchTerm(e.target.value)}
+                className="bg-white/[0.03] backdrop-blur-3xl border border-white/10 rounded-[32px] py-6 pl-16 pr-8 text-lg focus:outline-none focus:ring-2 focus:ring-violet-500/50 w-full sm:w-96 transition-all shadow-2xl placeholder:text-white/10"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-8">
+            {filteredBugs.map((bug, idx) => (
+              <motion.div 
+                key={bug.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.05 }}
+                className="glass-card p-8 md:p-12 rounded-[48px] shadow-2xl relative overflow-hidden group hover:bg-white/[0.05] transition-all duration-500 border border-white/5 hover:border-white/10"
+              >
+                <div className="absolute top-0 right-0 w-64 h-64 bg-violet-600/5 blur-[100px] rounded-full pointer-events-none group-hover:bg-violet-600/10 transition-colors" />
+                
+                <div className="flex flex-col md:flex-row md:items-start justify-between gap-8 relative z-10">
+                  <div className="space-y-6 flex-1">
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-violet-500/10 flex items-center justify-center border border-violet-500/20 shadow-lg">
+                        <Bug className="w-6 h-6 text-violet-400" />
+                      </div>
+                      <div>
+                        <h3 className="text-2xl font-bold tracking-tight text-white/90">Reported by {bug.userName}</h3>
+                        <p className="text-xs text-white/30 font-bold uppercase tracking-widest mt-1">
+                          {bug.createdAt ? format(toJSDate(bug.createdAt)!, 'MMM d, yyyy • HH:mm') : 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="p-8 bg-white/[0.02] rounded-[32px] border border-white/5 shadow-inner">
+                      <p className="text-lg text-white/80 leading-relaxed">{bug.description}</p>
+                    </div>
+
+                    <div className="flex flex-wrap gap-4">
+                      <div className={cn(
+                        "px-6 py-3 rounded-full text-xs font-bold uppercase tracking-widest flex items-center gap-2 border shadow-lg",
+                        bug.status === 'pending' && "bg-amber-500/10 text-amber-400 border-amber-500/20",
+                        bug.status === 'investigating' && "bg-blue-500/10 text-blue-400 border-blue-500/20",
+                        bug.status === 'fixed' && "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                      )}>
+                        {bug.status === 'pending' && <Clock className="w-4 h-4" />}
+                        {bug.status === 'investigating' && <Search className="w-4 h-4" />}
+                        {bug.status === 'fixed' && <CheckCircle2 className="w-4 h-4" />}
+                        {bug.status}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 w-full md:w-auto">
+                    <p className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] mb-2 text-center md:text-left">Update Status</p>
+                    <button 
+                      onClick={() => handleUpdateBugStatus(bug.id, 'investigating')}
+                      disabled={bug.status === 'investigating'}
+                      className={cn(
+                        "px-6 py-4 rounded-2xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-3 border shadow-xl",
+                        bug.status === 'investigating' 
+                          ? "bg-white/5 text-white/20 border-white/5 cursor-not-allowed" 
+                          : "bg-blue-600/10 text-blue-400 border-blue-500/20 hover:bg-blue-600 hover:text-white"
+                      )}
+                    >
+                      <Search className="w-4 h-4" /> Investigating
+                    </button>
+                    <button 
+                      onClick={() => handleUpdateBugStatus(bug.id, 'fixed')}
+                      disabled={bug.status === 'fixed'}
+                      className={cn(
+                        "px-6 py-4 rounded-2xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-3 border shadow-xl",
+                        bug.status === 'fixed' 
+                          ? "bg-white/5 text-white/20 border-white/5 cursor-not-allowed" 
+                          : "bg-emerald-600/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-600 hover:text-white"
+                      )}
+                    >
+                      <CheckCircle2 className="w-4 h-4" /> Fixed
+                    </button>
+                    <button 
+                      onClick={() => handleUpdateBugStatus(bug.id, 'pending')}
+                      disabled={bug.status === 'pending'}
+                      className={cn(
+                        "px-6 py-4 rounded-2xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-3 border shadow-xl",
+                        bug.status === 'pending' 
+                          ? "bg-white/5 text-white/20 border-white/5 cursor-not-allowed" 
+                          : "bg-amber-600/10 text-amber-400 border-amber-500/20 hover:bg-amber-600 hover:text-white"
+                      )}
+                    >
+                      <Clock className="w-4 h-4" /> Pending
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+            {bugs.length === 0 && (
+              <div className="p-40 text-center glass-card rounded-[80px] border border-dashed border-white/10 shadow-2xl">
+                <div className="w-20 h-20 rounded-3xl bg-white/5 flex items-center justify-center mx-auto mb-10 border border-white/10">
+                  <Bug size={40} className="text-white/10" />
+                </div>
+                <p className="text-white/30 text-3xl font-bold uppercase tracking-[0.2em]">No bug reports found</p>
               </div>
             )}
           </div>
@@ -665,6 +1077,161 @@ export const AdminDashboard: React.FC = () => {
                 >
                   Cancel
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* Edit Profile Modal */}
+      <AnimatePresence>
+        {isEditProfileModalOpen && editingUser && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsEditProfileModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="glass-card w-full max-w-2xl p-8 md:p-12 rounded-[40px] md:rounded-[56px] relative z-10 shadow-2xl border border-white/10 overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/10 blur-[100px] rounded-full pointer-events-none" />
+              
+              <div className="space-y-6 md:space-y-8">
+                <div className="flex items-center gap-4 md:gap-6">
+                  <div className="w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20 shadow-2xl">
+                    <Edit3 size={24} className="text-blue-400 md:w-8 md:h-8" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl md:text-4xl font-bold tracking-tight">Edit Member Profile</h3>
+                    <p className="text-white/40 text-sm md:text-lg font-medium">Updating details for <span className="text-white font-bold">{editingUser.fullName}</span></p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 ml-1">Full Name</label>
+                    <input
+                      type="text"
+                      value={editFormData.fullName}
+                      onChange={(e) => setEditFormData({ ...editFormData, fullName: e.target.value })}
+                      className="bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-6 text-sm md:text-base w-full focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 ml-1">Department</label>
+                    <input
+                      type="text"
+                      value={editFormData.department}
+                      onChange={(e) => setEditFormData({ ...editFormData, department: e.target.value })}
+                      className="bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-6 text-sm md:text-base w-full focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 ml-1">Year</label>
+                    <select
+                      value={editFormData.year}
+                      onChange={(e) => setEditFormData({ ...editFormData, year: e.target.value })}
+                      className="bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-6 text-sm md:text-base w-full focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all appearance-none"
+                    >
+                      <option value="1st Year">1st Year</option>
+                      <option value="2nd Year">2nd Year</option>
+                      <option value="3rd Year">3rd Year</option>
+                      <option value="4th Year">4th Year</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/30 ml-1">Bio / Status</label>
+                  <textarea
+                    rows={4}
+                    value={editFormData.bio}
+                    onChange={(e) => setEditFormData({ ...editFormData, bio: e.target.value })}
+                    className="bg-white/[0.03] border border-white/10 rounded-2xl py-4 px-6 text-sm md:text-base w-full focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all resize-none"
+                    placeholder="User's bio..."
+                  />
+                </div>
+
+                <div className="flex flex-col md:flex-row gap-4 pt-4">
+                  <motion.button 
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleProfileUpdate}
+                    disabled={isUpdatingProfile}
+                    className="flex-1 py-4 md:py-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-[24px] md:rounded-[32px] font-bold text-base md:text-xl transition-all shadow-2xl flex items-center justify-center gap-3"
+                  >
+                    {isUpdatingProfile ? <Loader2 className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
+                    Save Changes
+                  </motion.button>
+                  <button 
+                    onClick={() => setIsEditProfileModalOpen(false)}
+                    className="flex-1 py-4 md:py-6 bg-white/5 hover:bg-white/10 text-white/60 hover:text-white rounded-[24px] md:rounded-[32px] font-bold text-base md:text-xl transition-all border border-white/10"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Remove Member Confirmation Modal */}
+      <AnimatePresence>
+        {removeConfirmUser && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setRemoveConfirmUser(null)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="glass-card w-full max-w-lg p-12 rounded-[56px] relative z-10 shadow-2xl border border-red-500/20 overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/10 blur-[100px] rounded-full pointer-events-none" />
+              
+              <div className="text-center space-y-6">
+                <div className="w-16 h-16 rounded-2xl bg-red-500/10 flex items-center justify-center mx-auto border border-red-500/20 shadow-2xl">
+                  <UserX size={32} className="text-red-400" />
+                </div>
+                <div className="space-y-4">
+                  <h3 className="text-4xl font-bold tracking-tight">Remove Member?</h3>
+                  <p className="text-white/40 text-lg font-medium">
+                    Are you sure you want to remove <span className="text-white font-bold">{removeConfirmUser.fullName}</span> from FriendSpace? 
+                    This will revoke their access and move them to the rejected list.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 pt-8">
+                  <motion.button 
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleRemoveMember}
+                    disabled={isRemoving}
+                    className="w-full py-6 rounded-[28px] bg-gradient-to-r from-red-600 to-orange-600 text-white font-bold text-xl hover:from-red-500 hover:to-orange-500 transition-all shadow-2xl shadow-red-600/20 flex items-center justify-center gap-4"
+                  >
+                    {isRemoving ? <Loader2 className="w-6 h-6 animate-spin" /> : <>Confirm Removal</>}
+                  </motion.button>
+                  <button 
+                    onClick={() => setRemoveConfirmUser(null)}
+                    className="w-full py-4 text-white/20 hover:text-white/40 font-bold uppercase tracking-widest text-xs transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

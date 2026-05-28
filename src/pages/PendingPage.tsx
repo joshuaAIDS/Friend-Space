@@ -4,8 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { motion } from 'motion/react';
-import { Clock, LogOut, RefreshCw, ShieldCheck, User, GraduationCap } from 'lucide-react';
+import { Clock, LogOut, RefreshCw, ShieldCheck, User, GraduationCap, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+
+import BrandLogo from '../components/BrandLogo';
 
 const PendingPage = () => {
   const { user: profile, loading } = useAuth();
@@ -29,29 +31,56 @@ const PendingPage = () => {
     }
   };
 
-  const handleRefresh = () => {
+  const [lastUpdated, setLastUpdated] = React.useState<Date>(new Date());
+
+  React.useEffect(() => {
+    if (profile) {
+      setLastUpdated(new Date());
+    }
+  }, [profile]);
+
+  const handleRefresh = async () => {
+    toast.info('Checking for updates...');
+    // Force a small delay to show feedback
+    await new Promise(resolve => setTimeout(resolve, 1000));
     window.location.reload();
   };
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-12 h-12 text-violet-500 animate-spin" />
+          <p className="text-white/40 font-medium animate-pulse">Loading profile...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-6 py-12 relative overflow-hidden">
+    <div className="h-full w-full overflow-y-auto p-4 md:p-8 relative overflow-hidden flex items-center justify-center">
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] h-[60%] bg-violet-600/10 blur-[150px] rounded-full" />
 
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-2xl relative z-10"
+        className="w-full relative z-10 max-w-2xl"
       >
-        <div className="glass-card p-8 md:p-12 text-center">
-          <div className="w-20 h-20 bg-violet-500/10 border border-violet-500/20 rounded-3xl flex items-center justify-center mx-auto mb-8 animate-pulse">
+        <div className="glass-card p-8 md:p-12 text-center relative overflow-hidden">
+          <div className="absolute top-6 left-8">
+            <BrandLogo imageClassName="w-8 h-8" showText={false} />
+          </div>
+          
+          <div className="w-20 h-20 bg-violet-500/10 border border-violet-500/20 rounded-3xl flex items-center justify-center mx-auto mb-8 animate-pulse mt-4">
             <Clock className="w-10 h-10 text-violet-400" />
           </div>
 
           <h2 className="text-3xl font-bold mb-4 tracking-tight">Request Under Review</h2>
-          <p className="text-gray-400 text-lg mb-10 max-w-md mx-auto leading-relaxed">
+          <p className="text-gray-400 text-lg mb-2 max-w-md mx-auto leading-relaxed">
             Your join request has been sent to the admin. Please wait while we verify your details.
+          </p>
+          <p className="text-xs text-gray-500 italic mb-10">
+            Last checked: {lastUpdated.toLocaleTimeString()}
           </p>
 
           <div className="glass p-6 rounded-2xl border border-white/5 text-left mb-10">
